@@ -20,6 +20,7 @@ export const INITIAL_PATIENTS: Patient[] = [
     allergies: 'Nickel sensitivity: None reported. Latex: None.',
     notes: 'High aesthetic expectations; preparing for university admission.',
     createdAt: '2025-02-10',
+    isDemo: true,
   },
   {
     id: 'PAT-2025-002',
@@ -33,6 +34,7 @@ export const INITIAL_PATIENTS: Patient[] = [
     allergies: 'None known.',
     notes: 'Referred for non-surgical transverse expansion (MARPE) and Class III camouflage evaluation.',
     createdAt: '2025-06-01',
+    isDemo: true,
   },
   {
     id: 'PAT-2025-003',
@@ -47,6 +49,7 @@ export const INITIAL_PATIENTS: Patient[] = [
     allergies: 'Penicillin allergy.',
     notes: 'CBCT requested to evaluate 3D localization of impacted maxillary right canine (#13) and root proximity of #12.',
     createdAt: '2025-08-18',
+    isDemo: true,
   },
 ];
 

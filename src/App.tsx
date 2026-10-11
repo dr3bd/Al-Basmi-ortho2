@@ -50,9 +50,36 @@ import { P3ClinicalCoreWorkspace } from './components/P3ClinicalCoreWorkspace';
 import { ReportEngineView } from './components/ReportEngineView';
 import { AIDecisionSupportView } from './components/AIDecisionSupportView';
 import { OperationalAndSyncView } from './components/OperationalAndSyncView';
+import { useClinicalStorage } from './storage/context/ClinicalStorageContext.tsx';
+import { SqlitePatientRow } from './domain/p0SqliteSchema.ts';
+
+/**
+ * Maps an authoritative SQLite patient row into the UI presentation model.
+ */
+function mapSqlitePatientToUi(row: SqlitePatientRow): Patient {
+  const parts = (row.full_name_normalized || '').split('|');
+  const arName = parts[0]?.trim() || `${row.first_name} ${row.last_name}`;
+  const enName = parts[1]?.trim() || `${row.first_name} ${row.last_name}`;
+
+  return {
+    id: row.id,
+    fullNameAr: arName,
+    fullNameEn: enName,
+    gender: row.sex === 'FEMALE' ? 'Female' : 'Male',
+    dob: row.date_of_birth,
+    phone: row.phone,
+    guardianName: row.guardian_name || undefined,
+    medicalHistory: row.medical_alert || 'No systemic contraindications.',
+    dentalHistory: 'Initial orthodontic consultation.',
+    allergies: 'None',
+    notes: row.general_notes || '',
+    createdAt: row.created_at ? row.created_at.slice(0, 10) : new Date().toISOString().slice(0, 10),
+  };
+}
 
 const STORAGE_KEYS = {
-  PATIENTS: 'albasmi_orth_patients_v1',
+  // Legacy patient key isolated - no longer written to (SQLite is authoritative for patients)
+  LEGACY_PATIENTS: 'albasmi_orth_patients_v1',
   CASES: 'albasmi_orth_cases_v1',
   INVENTORY: 'albasmi_orth_inventory_v1',
   AUDIT: 'albasmi_orth_audit_v1',
@@ -85,15 +112,41 @@ export default function App() {
   const [searchQuery, setSearchQuery] = React.useState<string>('');
   const [showNewCaseModal, setShowNewCaseModal] = React.useState<boolean>(false);
 
-  // Offline-First Local Database State backed by localStorage
-  const [patients, setPatients] = React.useState<Patient[]>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEYS.PATIENTS);
-      return saved ? JSON.parse(saved) : INITIAL_PATIENTS;
-    } catch {
-      return INITIAL_PATIENTS;
+  // Clinical SQLite Storage Integration (Phase R2-A)
+  const { cohort2PatientService, deviceInfo, status: storageStatus } = useClinicalStorage();
+  const [persistenceError, setPersistenceError] = React.useState<string | null>(null);
+  const [isCreatingPatient, setIsCreatingPatient] = React.useState<boolean>(false);
+
+  // In-memory display projection of patients (authoritatively loaded from SQLite upon storage readiness)
+  const [patients, setPatients] = React.useState<Patient[]>(INITIAL_PATIENTS);
+
+  // Load authoritative patients from SQLite upon storage readiness
+  React.useEffect(() => {
+    let isMounted = true;
+    async function loadSqlitePatients() {
+      if (storageStatus === 'READY' && cohort2PatientService) {
+        try {
+          const sqliteRows = await cohort2PatientService.listActivePatients();
+          if (isMounted && sqliteRows && sqliteRows.length > 0) {
+            const mapped = sqliteRows.map(mapSqlitePatientToUi);
+            setPatients((prev) => {
+              const sqliteIds = new Set(mapped.map((p) => p.id));
+              const remainingDemo = prev.filter(
+                (p) => !sqliteIds.has(p.id) && INITIAL_PATIENTS.some((dp) => dp.id === p.id)
+              );
+              return [...mapped, ...remainingDemo];
+            });
+          }
+        } catch (err) {
+          console.error('Failed to load authoritative patients from SQLite:', err);
+        }
+      }
     }
-  });
+    loadSqlitePatients();
+    return () => {
+      isMounted = false;
+    };
+  }, [storageStatus, cohort2PatientService]);
 
   const [cases, setCases] = React.useState<OrthodonticCase[]>(() => {
     try {
@@ -139,10 +192,9 @@ export default function App() {
   const [newPatientDob, setNewPatientDob] = React.useState('2010-05-15');
   const [newCaseChiefComplaintEn, setNewCaseChiefComplaintEn] = React.useState('');
 
-  // Persist to Local Database automatically (Offline-First Guarantee)
+  // Persist non-migrated clinical entities to Local Storage (Patients are authoritative in SQLite)
   React.useEffect(() => {
     try {
-      localStorage.setItem(STORAGE_KEYS.PATIENTS, JSON.stringify(patients));
       localStorage.setItem(STORAGE_KEYS.CASES, JSON.stringify(cases));
       localStorage.setItem(STORAGE_KEYS.INVENTORY, JSON.stringify(inventory));
       localStorage.setItem(STORAGE_KEYS.AUDIT, JSON.stringify(auditLogs));
@@ -150,7 +202,7 @@ export default function App() {
     } catch {
       // Ignore storage quota errors in sandboxed iframes
     }
-  }, [patients, cases, inventory, auditLogs, syncQueue]);
+  }, [cases, inventory, auditLogs, syncQueue]);
 
   const activeCase = cases.find((c) => c.id === selectedCaseId) || cases[0];
   const activePatient =
@@ -333,46 +385,86 @@ export default function App() {
     URL.revokeObjectURL(url);
   };
 
-  const handleCreateNewCase = (e: React.FormEvent) => {
+  const handleCreateNewCase = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newPatientNameEn.trim() && !newPatientNameAr.trim()) return;
+    setPersistenceError(null);
 
-    const newPatId = `PAT-2026-00${patients.length + 1}`;
-    const newCaseId = `ORT-2026-001${cases.length + 25}`;
+    if (storageStatus !== 'READY' || !cohort2PatientService) {
+      setPersistenceError(
+        language === 'ar'
+          ? 'قاعدة بيانات SQLite غير جاهزة بعد. يرجى الانتظار حتى اكتمال التهيئة.'
+          : 'SQLite storage engine is not ready yet. Please wait for initialization.'
+      );
+      return;
+    }
 
-    const newPatient: Patient = {
-      id: newPatId,
-      fullNameAr: newPatientNameAr || newPatientNameEn,
-      fullNameEn: newPatientNameEn || newPatientNameAr,
-      gender: 'Female',
-      dob: newPatientDob,
-      phone: '+966 50 000 0000',
-      medicalHistory: 'No systemic contraindications.',
-      dentalHistory: 'Initial orthodontic consultation.',
-      allergies: 'None',
-      notes: '',
-      createdAt: new Date().toISOString().slice(0, 10),
-    };
+    setIsCreatingPatient(true);
+    try {
+      const trimmedEn = newPatientNameEn.trim();
+      const trimmedAr = newPatientNameAr.trim();
+      const primaryName = trimmedEn || trimmedAr;
+      const firstName = primaryName.split(' ')[0] || 'مريض';
+      const lastName = primaryName.split(' ').slice(1).join(' ') || (trimmedAr ? 'الجديد' : 'New');
+      const patSeq = Date.now().toString().slice(-4);
+      const patientNumber = `PAT-2026-${patSeq}`;
+      const patientId = `pat-${Date.now()}`;
+      const deviceId = deviceInfo?.deviceId || 'dev-browser-client';
+      const nowIso = new Date().toISOString();
 
-    const templateCase: OrthodonticCase = {
-      ...INITIAL_CASES[0],
-      id: newCaseId,
-      patientId: newPatId,
-      status: 'Diagnosis',
-      startDate: new Date().toISOString().slice(0, 10),
-      chiefComplaintEn:
-        newCaseChiefComplaintEn || 'Crowding and protrusion of upper anterior teeth.',
-      chiefComplaintAr: 'ازدحام وبروز الأسنان الأمامية العلوية.',
-      visits: [],
-    };
+      // 1. Authoritative SQLite persistence (Atomic: patients + audit_logs + sync_operations)
+      const result = await cohort2PatientService.createPatient({
+        id: patientId,
+        patientNumber,
+        firstName,
+        lastName,
+        dateOfBirth: newPatientDob || '2010-05-15',
+        sex: 'FEMALE',
+        phone: '+966500000000',
+        userId: 'usr-dr-albasmi',
+        userRole: 'ORTHODONTIST',
+        deviceId,
+        timestamp: nowIso,
+        generalNotes: 'Initial orthodontic consultation.',
+      });
 
-    setPatients((prev) => [newPatient, ...prev]);
-    setCases((prev) => [templateCase, ...prev]);
-    setSelectedCaseId(newCaseId);
-    setShowNewCaseModal(false);
-    setActiveNav('case_workspace');
-    setActiveCaseTab('examination');
-    appendAuditLog('Patient & Case Core', `Created New Orthodontic Case ${newCaseId}`, newPatient.fullNameEn);
+      // 2. Map to UI presentation only AFTER confirmed successful persistence
+      const createdUiPatient = mapSqlitePatientToUi(result.patient);
+      const newCaseId = `ORT-2026-001${cases.length + 25}`;
+
+      const templateCase: OrthodonticCase = {
+        ...INITIAL_CASES[0],
+        id: newCaseId,
+        patientId: createdUiPatient.id,
+        status: 'Diagnosis',
+        startDate: nowIso.slice(0, 10),
+        chiefComplaintEn:
+          newCaseChiefComplaintEn || 'Crowding and protrusion of upper anterior teeth.',
+        chiefComplaintAr: 'ازدحام وبروز الأسنان الأمامية العلوية.',
+        visits: [],
+      };
+
+      setPatients((prev) => [createdUiPatient, ...prev]);
+      setCases((prev) => [templateCase, ...prev]);
+      setSelectedCaseId(newCaseId);
+      setShowNewCaseModal(false);
+      setNewPatientNameAr('');
+      setNewPatientNameEn('');
+      setNewCaseChiefComplaintEn('');
+      setActiveNav('case_workspace');
+      setActiveCaseTab('examination');
+      appendAuditLog(
+        'Patient Core (SQLite)',
+        `Created Authoritative SQLite Patient ${createdUiPatient.id} (${patientNumber})`,
+        createdUiPatient.fullNameEn
+      );
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setPersistenceError(msg);
+      console.error('Patient creation failed (transaction rolled back):', err);
+    } finally {
+      setIsCreatingPatient(false);
+    }
   };
 
   const filteredCases = cases.filter((c) => {
@@ -1034,6 +1126,12 @@ export default function App() {
                 Close ✕
               </button>
             </div>
+            {persistenceError && (
+              <div className="p-3 bg-red-50 border border-red-200 text-red-700 rounded text-xs flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-red-600 flex-shrink-0" />
+                <span className="font-mono text-[11px]">{persistenceError}</span>
+              </div>
+            )}
             <form onSubmit={handleCreateNewCase} className="space-y-3 text-xs">
               <div>
                 <label className="font-semibold text-slate-700 block mb-1">
@@ -1087,15 +1185,24 @@ export default function App() {
                 <button
                   type="button"
                   onClick={() => setShowNewCaseModal(false)}
-                  className="px-4 py-2 bg-slate-100 text-slate-700 rounded-lg font-medium"
+                  disabled={isCreatingPatient}
+                  className="px-4 py-2 bg-slate-100 text-slate-700 rounded-lg font-medium disabled:opacity-50"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-800"
+                  disabled={isCreatingPatient}
+                  className="px-4 py-2 bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-800 disabled:opacity-50 flex items-center gap-2"
                 >
-                  Initialize Case Record
+                  {isCreatingPatient ? (
+                    <>
+                      <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      <span>{language === 'ar' ? 'جارٍ الحفظ في SQLite...' : 'Saving to SQLite...'}</span>
+                    </>
+                  ) : (
+                    <span>{language === 'ar' ? 'إنشاء وحفظ في SQLite' : 'Initialize & Save to SQLite'}</span>
+                  )}
                 </button>
               </div>
             </form>

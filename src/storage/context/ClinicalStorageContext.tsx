@@ -14,6 +14,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { WaSqliteStorageAdapter } from '../drivers/waSqliteAdapter.ts';
 import { Cohort1PersistenceService } from '../drivers/cohort1PersistenceService.ts';
+import { Cohort2PatientPersistenceService } from '../drivers/cohort2PatientPersistenceService.ts';
 import { DeviceBootstrapResult, DeviceBootstrapService } from '../services/deviceBootstrap.ts';
 import { ISqliteStorageAdapter, VfsDriverType } from '../types/storageAdapter.ts';
 import { P0_PRODUCTION_SQLITE_DDL } from '../../domain/p0SqliteSchema.ts';
@@ -29,6 +30,7 @@ export interface ClinicalStorageContextValue {
   status: StorageLifecycleStatus;
   adapter: ISqliteStorageAdapter | null;
   cohort1Service: Cohort1PersistenceService | null;
+  cohort2PatientService: Cohort2PatientPersistenceService | null;
   deviceInfo: DeviceBootstrapResult | null;
   vfsDriver: VfsDriverType | null;
   errorMessage: string | null;
@@ -40,6 +42,7 @@ const ClinicalStorageContext = createContext<ClinicalStorageContextValue>({
   status: 'UNINITIALIZED',
   adapter: null,
   cohort1Service: null,
+  cohort2PatientService: null,
   deviceInfo: null,
   vfsDriver: null,
   errorMessage: null,
@@ -61,6 +64,7 @@ export const ClinicalStorageProvider: React.FC<ClinicalStorageProviderProps> = (
   const [status, setStatus] = useState<StorageLifecycleStatus>('UNINITIALIZED');
   const [adapter, setAdapter] = useState<ISqliteStorageAdapter | null>(null);
   const [cohort1Service, setCohort1Service] = useState<Cohort1PersistenceService | null>(null);
+  const [cohort2PatientService, setCohort2PatientService] = useState<Cohort2PatientPersistenceService | null>(null);
   const [deviceInfo, setDeviceInfo] = useState<DeviceBootstrapResult | null>(null);
   const [vfsDriver, setVfsDriver] = useState<VfsDriverType | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -130,13 +134,15 @@ export const ClinicalStorageProvider: React.FC<ClinicalStorageProviderProps> = (
         );
       }
 
-      // 4. Initialize Cohort 1 Service & Bootstrap Device
+      // 4. Initialize Cohort 1 & Cohort 2 Services & Bootstrap Device
       const c1Service = new Cohort1PersistenceService(newAdapter);
+      const c2PatientService = new Cohort2PatientPersistenceService(newAdapter);
       const bootstrapper = new DeviceBootstrapService(newAdapter, c1Service);
       const bootResult = await bootstrapper.bootstrapDevice();
 
       setAdapter(newAdapter);
       setCohort1Service(c1Service);
+      setCohort2PatientService(c2PatientService);
       setDeviceInfo(bootResult);
       setStatus('READY');
     } catch (err: unknown) {
@@ -157,6 +163,7 @@ export const ClinicalStorageProvider: React.FC<ClinicalStorageProviderProps> = (
         status,
         adapter,
         cohort1Service,
+        cohort2PatientService,
         deviceInfo,
         vfsDriver,
         errorMessage,

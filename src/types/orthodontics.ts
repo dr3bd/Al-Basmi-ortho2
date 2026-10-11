@@ -42,6 +42,7 @@ export interface Patient {
   allergies: string;
   notes: string;
   createdAt: string;
+  isDemo?: boolean; // Synthetic demo patient flag (isolated from SQLite)
 }
 
 export interface ExtraoralExam {
@@ -322,6 +323,7 @@ export interface OrthodonticCase {
   retentionAndResidual: ResidualAndRetentionRecord;
   financials: CaseFinancialRecord;
   referencesIds: string[];
+  isDemo?: boolean; // Synthetic demo case flag (isolated from real clinical cases)
 }
 
 export interface ScientificReference {

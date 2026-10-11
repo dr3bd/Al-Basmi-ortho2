@@ -706,6 +706,38 @@ A phase authorization does not automatically authorize changes outside its state
 
 The existence of a roadmap item does not constitute permission to implement it.
 
+RELATIONSHIP BETWEEN P0 PRODUCT SPECIFICATION AND ENGINEERING CONSTITUTION
+
+The original P0 — Orthodontic Clinical Platform Specification and the Permanent Engineering Constitution are complementary authorities with distinct responsibilities.
+
+P0 PRODUCT SPECIFICATION — WHAT THE PLATFORM MUST DELIVER
+
+P0 is the authoritative reference for the platform’s intended clinical and functional capabilities, clinical data relationships, offline-first requirements, persistence objectives, reporting, synchronization, AI assistance, and operational workflows.
+
+PERMANENT ENGINEERING CONSTITUTION — HOW ENGINEERING WORK MUST BE GOVERNED
+
+The Engineering Constitution governs architectural integrity, implementation discipline, source-of-truth rules, contract preservation, authorization, validation, transaction safety, testing integrity, forensic verification, and change control.
+
+PHASE AUTHORIZATION — WHAT MAY BE DONE NOW
+
+The active Phase Authorization defines the specific work permitted during the current phase, including its objectives, authorized files, forbidden changes, required evidence, and acceptance criteria.
+
+JOINT APPLICATION RULE
+
+Every significant implementation decision must be evaluated against both P0 product requirements and the applicable engineering contracts and constitution.
+
+Compliance with engineering rules does not excuse failure to deliver the required clinical functionality.
+
+Implementing a requested feature does not excuse violating architectural contracts or bypassing engineering controls.
+
+The existence of a schema, interface, repository, service, UI component, or passing unit test does not establish that a P0 requirement is satisfied. Actual integration and behavior must be verified with appropriate evidence.
+
+If a P0 requirement appears incompatible with a frozen contract, the agent must identify the exact conflict and request an explicit architectural ruling. It must not silently modify the contract, abandon the product requirement, or invent a parallel architecture.
+
+Neither document independently authorizes implementation. All code changes remain subject to the active Phase Authorization.
+
+END OF P0 AND ENGINEERING CONSTITUTION RELATIONSHIP
+
 5. SINGLE SOURCE OF TRUTH AND RUNTIME INTEGRITY
 
 The clinical platform must ultimately have one authoritative durable source of truth for each clinical entity.

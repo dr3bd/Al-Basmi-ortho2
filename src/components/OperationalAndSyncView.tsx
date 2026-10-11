@@ -1135,17 +1135,19 @@ export const OperationalAndSyncView: React.FC<OperationalAndSyncViewProps> = ({
                   {p2dSuite.forensicSearchFindings.map((f, idx) => (
                     <tr key={`${f.filePath}-${idx}`} className="hover:bg-slate-50 align-top">
                       <td className="p-2 font-mono font-bold text-slate-900 whitespace-nowrap">
-                        {f.filePath}:{f.lineReference}
+                        {f.filePath}:{f.lineRange}
                       </td>
                       <td className="p-2 font-mono text-[11px] text-indigo-800">{f.patternMatched}</td>
                       <td className="p-2">
                         <span
                           className={`px-2 py-0.5 rounded font-mono text-[10px] font-bold ${
-                            f.classification === 'COMPLIANT_REPOSITORY_CONTRACT'
+                            f.classification === 'ALLOWED'
                               ? 'bg-emerald-100 text-emerald-800'
-                              : f.classification === 'LEGACY_LOCAL_STORAGE_MOCK_ADAPTER'
-                                ? 'bg-amber-100 text-amber-800'
-                                : 'bg-blue-100 text-blue-800'
+                              : f.classification === 'VIOLATION'
+                                ? 'bg-rose-100 text-rose-800'
+                                : f.classification === 'EXPECTED'
+                                  ? 'bg-blue-100 text-blue-800'
+                                  : 'bg-amber-100 text-amber-800'
                           }`}
                         >
                           {f.classification}
@@ -1188,7 +1190,7 @@ export const OperationalAndSyncView: React.FC<OperationalAndSyncViewProps> = ({
                   {p2dSuite.tests.map((t) => (
                     <tr key={t.testCode} className="hover:bg-slate-50">
                       <td className="p-2 font-mono font-bold text-slate-900">{t.testCode}</td>
-                      <td className="p-2 font-mono text-[10px] text-slate-600">{t.sectionGroup}</td>
+                      <td className="p-2 font-mono text-[10px] text-slate-600">{t.groupRange}</td>
                       <td className="p-2 font-mono text-[11px] text-indigo-700 font-semibold">
                         {t.repository}
                       </td>

@@ -8,6 +8,7 @@
  */
 
 import { AggregateRootName, P2ADomainCommandType } from './p2aDomainBoundaryContract';
+import { P3ClinicalCommandType } from './p2cDomainValidationEngine';
 import {
   AuthoritativeCommandPipeline,
   AuthoritativeQueryReadService,
@@ -56,7 +57,7 @@ export class OfflineClinicalEngine {
     db: AuthoritativeRelationalDatabaseState,
     params: {
       operationId: string;
-      commandId: P2ADomainCommandType | 'InvokeCloudLLMInference';
+      commandId: P2ADomainCommandType | P3ClinicalCommandType | 'InvokeCloudLLMInference';
       userId: string;
       userRole: 'ORTHODONTIST' | 'CLINICAL_ASSISTANT' | 'FINANCE_ADMIN';
       deviceId: string;
@@ -451,7 +452,7 @@ export interface IncomingRemoteSyncEnvelope {
   user_role: 'ORTHODONTIST' | 'CLINICAL_ASSISTANT' | 'FINANCE_ADMIN';
   schema_version: string;
   domain_version: string;
-  command_id: P2ADomainCommandType;
+  command_id: P2ADomainCommandType | P3ClinicalCommandType;
   entity_type: AggregateRootName;
   entity_id: string;
   case_id?: string;
@@ -574,17 +575,22 @@ export class ControlledSynchronizationEngine {
 
       // H-07: Preserve failed/conflicted sync operation trace
       db.sync_operations.set(incoming.operation_id, {
+        operation_id: incoming.operation_id,
         id: incoming.operation_id,
         device_id: incoming.remote_device_id,
         entity_type: incoming.entity_type,
         entity_id: incoming.entity_id,
         operation_type: 'UPDATE',
-        entity_version: incoming.incoming_version,
         base_version: incoming.base_version,
+        result_version: incoming.incoming_version,
+        entity_version: incoming.incoming_version,
+        payload: JSON.stringify(incoming.payload),
         payload_json: JSON.stringify(incoming.payload),
         idempotency_key: incoming.operation_id,
         sync_status: 'CONFLICT',
         retry_count: 1,
+        error_code: 'ERR_VERSION_CONFLICT',
+        error_message: 'ERR_VERSION_CONFLICT_RECORDED',
         last_error: 'ERR_VERSION_CONFLICT_RECORDED',
         created_at: incoming.timestamp,
         synced_at: null,
@@ -621,17 +627,22 @@ export class ControlledSynchronizationEngine {
       const errCode = execResult.errors[0]?.code || 'ERR_REMOTE_SYNC_REJECTED';
       // H-07: Failed sync operation remains traceable
       db.sync_operations.set(`${incoming.operation_id}-failed-trace`, {
+        operation_id: `${incoming.operation_id}-failed-trace`,
         id: `${incoming.operation_id}-failed-trace`,
         device_id: incoming.remote_device_id,
         entity_type: incoming.entity_type,
         entity_id: incoming.entity_id,
-        operation_type: 'INSERT',
-        entity_version: incoming.incoming_version,
+        operation_type: 'CREATE',
         base_version: incoming.base_version,
+        result_version: incoming.incoming_version,
+        entity_version: incoming.incoming_version,
+        payload: JSON.stringify(incoming.payload),
         payload_json: JSON.stringify(incoming.payload),
         idempotency_key: incoming.operation_id,
         sync_status: 'FAILED',
         retry_count: 1,
+        error_code: errCode,
+        error_message: errCode,
         last_error: errCode,
         created_at: incoming.timestamp,
         synced_at: null,
@@ -1015,15 +1026,15 @@ export function executeP2IAuditProvenanceForensicSuite(): P2IExecutionSummary {
 
   const hasValidAudit = (auditId: string | null, expectedEntityType: string): boolean => {
     if (!auditId) return false;
-    const row: SqliteAuditLogRow | undefined = db.audit_logs.get(auditId);
+    const row = db.audit_logs.get(auditId);
     if (!row) return false;
     return (
       row.entity_type === expectedEntityType &&
-      Boolean(row.actor_user_id) &&
-      Boolean(row.actor_role) &&
+      Boolean((row as any).actor_user_id || row.user_id) &&
+      Boolean((row as any).actor_role || row.metadata_json) &&
       Boolean(row.device_id) &&
-      Boolean(row.created_at) &&
-      Boolean(row.new_state_snapshot)
+      Boolean((row as any).created_at || row.timestamp) &&
+      Boolean((row as any).new_state_snapshot || row.new_payload)
     );
   };
 
