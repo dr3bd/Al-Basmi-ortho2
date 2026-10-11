@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>Al-Basmi Orth — Orthodontic Clinical, Diagnostic & Scientific Reporting Platform</title>
+    <meta name="description" content="Tablet-first offline-capable orthodontic clinical management, cephalometric analysis, diagnostic decision-support, longitudinal case tracking, and bilingual (Arabic/English) scientific reporting platform." />
+    <meta property="og:title" content="Al-Basmi Orth — Orthodontic Clinical, Diagnostic & Scientific Reporting Platform" />
+    <meta property="og:description" content="Tablet-first offline-capable orthodontic clinical management, cephalometric analysis, diagnostic decision-support, longitudinal case tracking, and bilingual (Arabic/English) scientific reporting platform." />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script>
+      (function () {
+        const NativeWebSocket = window.WebSocket;
+        if (!NativeWebSocket) return;
+        function SafeViteWebSocket(url, protocols) {
+          const isViteHmr =
+            typeof protocols === 'string'
+              ? protocols.includes('vite-hmr') || protocols.includes('vite-ping')
+              : Array.isArray(protocols) &&
+                protocols.some((p) => String(p).includes('vite-hmr') || String(p).includes('vite-ping'));
+          if (isViteHmr) {
+            const dummy = new EventTarget();
+            dummy.readyState = 3;
+            dummy.send = function () {};
+            dummy.close = function () {};
+            dummy.addEventListener = EventTarget.prototype.addEventListener.bind(dummy);
+            dummy.removeEventListener = EventTarget.prototype.removeEventListener.bind(dummy);
+            return dummy;
+          }
+          return protocols ? new NativeWebSocket(url, protocols) : new NativeWebSocket(url);
+        }
+        SafeViteWebSocket.prototype = NativeWebSocket.prototype;
+        SafeViteWebSocket.CONNECTING = NativeWebSocket.CONNECTING;
+        SafeViteWebSocket.OPEN = NativeWebSocket.OPEN;
+        SafeViteWebSocket.CLOSING = NativeWebSocket.CLOSING;
+        SafeViteWebSocket.CLOSED = NativeWebSocket.CLOSED;
+        window.WebSocket = SafeViteWebSocket;
+      })();
+    </script>
+  </head>
+  <body class="bg-slate-50 text-slate-900 antialiased selection:bg-blue-600 selection:text-white">
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+
