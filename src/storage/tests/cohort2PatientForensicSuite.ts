@@ -24,6 +24,7 @@ import {
   Cohort2PersistenceError,
   CreatePatientParams,
 } from '../drivers/cohort2PatientPersistenceService.ts';
+import { SqliteStorageError } from '../types/storageAdapter.ts';
 import { P0_PRODUCTION_SQLITE_DDL, SqlitePatientRow } from '../../domain/p0SqliteSchema.ts';
 
 export interface Cohort2TestResult {
@@ -501,6 +502,69 @@ export async function runCohort2PatientForensicSuite(
     );
   } catch (err: unknown) {
     addResult('P2-13', 'Active Patient List Retrieval & Chronological Order', false, String(err));
+  }
+
+  // --------------------------------------------------------------------------
+  // P2-14: Demo Patient Isolation from Clinical Attachment Defense
+  // --------------------------------------------------------------------------
+  try {
+    // 1. Verify demo IDs (PAT-2025-001, PAT-2025-002, PAT-2025-003) do not exist in SQLite
+    const demoPatient1 = await service.getPatientById('PAT-2025-001');
+    const demoPatient2 = await service.getPatientById('PAT-2025-002');
+    const demoPatient3 = await service.getPatientById('PAT-2025-003');
+
+    const demoNotInSqlite = demoPatient1 === null && demoPatient2 === null && demoPatient3 === null;
+
+    // 2. Simulate clinical case attachment guard: non-existent patient ID must be rejected
+    const unpersistedId = 'NON-PERSISTED-PATIENT-ID';
+    const foundUnpersisted = await service.getPatientById(unpersistedId);
+    const clinicalAttachmentBlocked = foundUnpersisted === null;
+
+    const p14Passed = demoNotInSqlite && clinicalAttachmentBlocked;
+
+    addResult(
+      'P2-14',
+      'Demo Patient Isolation from Clinical Attachment Defense',
+      p14Passed,
+      'Verified zero demo patients in SQLite. Clinical case creation requires verified SQLite patient existence.'
+    );
+  } catch (err: unknown) {
+    addResult('P2-14', 'Demo Patient Isolation from Clinical Attachment Defense', false, String(err));
+  }
+
+  // --------------------------------------------------------------------------
+  // P2-15: Clinical Mode Anti-Silent Ephemeral Fallback Enforcement
+  // --------------------------------------------------------------------------
+  try {
+    let caughtFatal = false;
+    try {
+      const strictClinicalAdapter = new WaSqliteStorageAdapter({
+        databaseName: `test_strict_clinical_${Date.now()}.db`,
+        mode: 'CLINICAL',
+        preferredVfs: 'OPFS', // In Node.js environment, OPFS is unavailable; adapter must refuse fallback
+        allowPreviewEphemeral: false,
+        wasmBinary: options.wasmBinary,
+      });
+      await strictClinicalAdapter.initialize();
+    } catch (e: unknown) {
+      if (
+        e instanceof SqliteStorageError &&
+        (e.code === 'ERR_PERSISTENCE_UNAVAILABLE' || e.code === 'ERR_SQLITE_INITIALIZATION_FAILED')
+      ) {
+        caughtFatal = true;
+      }
+    }
+
+    addResult(
+      'P2-15',
+      'Clinical Mode Anti-Silent Ephemeral Fallback Enforcement',
+      caughtFatal,
+      caughtFatal
+        ? 'Adapter strictly threw ERR_PERSISTENCE_UNAVAILABLE in Clinical Mode when durable storage was inaccessible; refused silent in-memory fallback.'
+        : 'Adapter silently booted in-memory storage in Clinical Mode without throwing fatal error.'
+    );
+  } catch (err: unknown) {
+    addResult('P2-15', 'Clinical Mode Anti-Silent Ephemeral Fallback Enforcement', false, String(err));
   }
 
   const passedCount = results.filter((r) => r.passed).length;

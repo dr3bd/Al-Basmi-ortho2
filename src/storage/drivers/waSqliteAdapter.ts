@@ -245,14 +245,23 @@ export class WaSqliteStorageAdapter implements ISqliteStorageAdapter {
           return (res[0][k] as T) ?? null;
         },
         savepoint: async (name, cb) => {
-          await this.internalExecute(`SAVEPOINT ${name};`);
+          const safeSpName = name.replace(/[^a-zA-Z0-9_]/g, '_');
+          this._activeTransactionDepth++;
+          await this.internalExecute(`SAVEPOINT ${safeSpName};`);
           try {
-            const out = await cb();
-            await this.internalExecute(`RELEASE ${name};`);
+            const out = await (cb as (ctx?: ISqliteTransactionContext) => Promise<any>)(txContext);
+            await this.internalExecute(`RELEASE SAVEPOINT ${safeSpName};`);
             return out;
           } catch (spErr) {
-            await this.internalExecute(`ROLLBACK TO ${name};`);
+            try {
+              await this.internalExecute(`ROLLBACK TO SAVEPOINT ${safeSpName};`);
+              await this.internalExecute(`RELEASE SAVEPOINT ${safeSpName};`);
+            } catch {
+              // Ignore secondary rollback error
+            }
             throw spErr;
+          } finally {
+            this._activeTransactionDepth--;
           }
         },
       };
@@ -262,7 +271,7 @@ export class WaSqliteStorageAdapter implements ISqliteStorageAdapter {
       if (isTopLevel) {
         await this.internalExecute('COMMIT;');
       } else {
-        await this.internalExecute(`RELEASE ${savepointName};`);
+        await this.internalExecute(`RELEASE SAVEPOINT ${savepointName};`);
       }
 
       return result;
@@ -271,7 +280,8 @@ export class WaSqliteStorageAdapter implements ISqliteStorageAdapter {
         if (isTopLevel) {
           await this.internalExecute('ROLLBACK;');
         } else {
-          await this.internalExecute(`ROLLBACK TO ${savepointName};`);
+          await this.internalExecute(`ROLLBACK TO SAVEPOINT ${savepointName};`);
+          await this.internalExecute(`RELEASE SAVEPOINT ${savepointName};`);
         }
       } catch {
         // Rollback attempt completed
@@ -297,6 +307,30 @@ export class WaSqliteStorageAdapter implements ISqliteStorageAdapter {
         undefined,
         err
       );
+    } finally {
+      release();
+    }
+  }
+
+  public async exportDatabaseBinary(): Promise<Uint8Array> {
+    this.assertConnected();
+    const release = await this._mutex.acquire();
+    try {
+      const tables = await this.internalQuery<{ name: string }>(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name ASC;"
+      );
+      const snapshot: Record<string, unknown[]> = {};
+      for (const t of tables) {
+        snapshot[t.name] = await this.internalQuery(`SELECT * FROM "${t.name}";`);
+      }
+      const json = JSON.stringify({
+        format: 'ALBASMI_SQLITE_PHYSICAL_SNAPSHOT_v1',
+        databaseName: this._databaseName,
+        driverId: this._driverId,
+        exportedAt: new Date().toISOString(),
+        tables: snapshot,
+      });
+      return new TextEncoder().encode(json);
     } finally {
       release();
     }
@@ -364,11 +398,14 @@ export class WaSqliteStorageAdapter implements ISqliteStorageAdapter {
       }
       changes = this._sqlite3.changes(this._dbHandle);
 
-      // Query last insert rowid
+      // Query last insert rowid only for INSERT/REPLACE statements to avoid clobbering state
       let lastInsertRowId: number | bigint = 0;
-      for await (const rowidStmt of this._sqlite3.statements(this._dbHandle, 'SELECT last_insert_rowid();')) {
-        if ((await this._sqlite3.step(rowidStmt)) === SQLite.SQLITE_ROW) {
-          lastInsertRowId = this._sqlite3.column(rowidStmt, 0);
+      const trimmedUpper = sql.trimStart().toUpperCase();
+      if (trimmedUpper.startsWith('INSERT') || trimmedUpper.startsWith('REPLACE')) {
+        for await (const rowidStmt of this._sqlite3.statements(this._dbHandle, 'SELECT last_insert_rowid();')) {
+          if ((await this._sqlite3.step(rowidStmt)) === SQLite.SQLITE_ROW) {
+            lastInsertRowId = this._sqlite3.column(rowidStmt, 0);
+          }
         }
       }
 
@@ -404,10 +441,21 @@ export class WaSqliteStorageAdapter implements ISqliteStorageAdapter {
   }
 
   private bindParameters(stmt: any, params: SqliteParams): void {
+    const normalizeVal = (v: unknown): SqliteParamValue => {
+      if (v === undefined || v === null) return null;
+      if (typeof v === 'boolean') return v ? 1 : 0;
+      return v as SqliteParamValue;
+    };
+
     if (Array.isArray(params)) {
-      this._sqlite3.bind_collection(stmt, params);
+      const sanitized = params.map(normalizeVal);
+      this._sqlite3.bind_collection(stmt, sanitized);
     } else if (typeof params === 'object' && params !== null) {
-      this._sqlite3.bind_collection(stmt, params);
+      const sanitizedObj: Record<string, SqliteParamValue> = {};
+      for (const [k, v] of Object.entries(params)) {
+        sanitizedObj[k] = normalizeVal(v);
+      }
+      this._sqlite3.bind_collection(stmt, sanitizedObj);
     }
   }
 

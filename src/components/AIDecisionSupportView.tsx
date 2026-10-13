@@ -59,6 +59,79 @@ interface AIConsultResponse {
   }[];
 }
 
+const DEMO_SARA_AI_RESPONSE: AIConsultResponse = {
+  summary:
+    'Case ORT-2026-00104 presents a well-documented Class II Div 1 malocclusion on a mild Class II hyperdivergent skeletal base (ANB 5.5°, SN-MP 36°). The selected 4-premolar extraction plan with bilateral maxillary TADs directly addresses both the 6.5mm upper crowding and 7.5mm overjet while maintaining vertical control.',
+  summaryAr:
+    'تُظهر الحالة (ORT-2026-00104) سوء إطباق صنف ثانٍ قسم أول على قاعدة هيكلية من الصنف الثاني مع نمط عمودي متباعد (ANB = 5.5°، SN-MP = 36°). الخطة المختارة بخلع الضواحك الأربعة مع زرعات الإرساء الهيكلي العلوية (TADs) تعالج الازدحام العلوي الشديد (6.5 ملم) والبروز السهمي (Overjet 7.5mm) بكفاءة مع الحفاظ على البعد العمودي.',
+  certaintyBreakdown: [
+    {
+      statement: 'Skeletal Class II sagittal discrepancy with mild hyperdivergent pattern',
+      statementAr: 'سوء علاقة هيكلية سهمية من الصنف الثاني (Class II) مع نمط عمودي متباعد',
+      level: 'CONFIRMED',
+      evidenceFromRecord: 'T0 Cephalometrics: ANB = 5.5° (Norm 2°±2°), Wits = +3.5mm, GoGn-SN = 36.0°.',
+      evidenceAr: 'قياسات السيفالومتري الأولية (T0): زاوية ANB = 5.5°، تقييم Wits = +3.5 ملم، زاوية GoGn-SN = 36.0°.',
+    },
+    {
+      statement: 'Bimaxillary dentoalveolar proclination and severe upper arch length deficiency',
+      statementAr: 'ميلان دهليزي للقواطع العلوية والسفلية مع نقص شديد في طول القوس العلوية',
+      level: 'CONFIRMED',
+      evidenceFromRecord: 'U1-SN = 112.0°, IMPA = 96.5°, U1-L1 = 115.0°, Upper crowding = 6.5mm, Lower crowding = 5.0mm.',
+      evidenceAr: 'ميلان القواطع العلوية (U1-SN = 112°)، والسفلية (IMPA = 96.5°)، والازدحام العلوي 6.5 ملم والسفلي 5.0 ملم.',
+    },
+    {
+      statement: 'Risk of labial alveolar bone dehiscence if treated non-extraction',
+      statementAr: 'خطر انكشاف الصفيحة العظمية الدهليزية (Dehiscence) في حال العلاج بدون خلع',
+      level: 'LIKELY',
+      evidenceFromRecord: 'CBCT assessment notes "Thin Labial Cortical Plate" combined with IMPA already at 96.5°.',
+      evidenceAr: 'فحص الأشعة المقطعية (CBCT) يُظهر رقة الصفيحة القشرية الدهليزية مع ميلان قواطع سفلية مرتفع (IMPA = 96.5°).',
+    },
+    {
+      statement: 'Long-term post-retention stability of 6.5mm incisor retraction',
+      statementAr: 'ثبات طويل الأمد لإرجاع القواطع العلوية مسافة 6.5 ملم بعد التثبيت',
+      level: 'POSSIBLE',
+      evidenceFromRecord: 'Requires verification of passive lip seal and strict dual retention (Fixed 3-3 + nighttime Essix).',
+      evidenceAr: 'يتطلب التحقق من كفاءة إطباق الشفاه السلبية والالتزام بالتثبيت المزدوج (مثبت لساني ثابت + قالب شفاف ليلي).',
+    },
+  ],
+  suggestedProblems: [
+    {
+      category: 'Dental',
+      problemEn: 'Apical root resorption risk on maxillary central incisors during 6.5mm bodily retraction',
+      problemAr: 'خطر امتصاص ذروة الجذور في القواطع المركزية العلوية أثناء الإرجاع الجسمي لمسافة 6.5 ملم',
+      objectiveEn: 'Limit light continuous retraction forces to 150g per side and take 6-month progress periapical/panoramic radiographs',
+      objectiveAr: 'تطبيق قوى مستمرة خفيفة (150 غرام لكل جهة) مع مراقبة شعاعية دورية كل 6 أشهر لجذور القواطع',
+      strategyEn: '150g NiTi closed coil springs on 0.019×0.025 SS wire with controlled lingual root torque',
+    },
+  ],
+  critiqueWarnings: [
+    'Every documented Actual Problem in this case has a corresponding Treatment Objective and Biomechanical Strategy.',
+    'Caution: CBCT records show a thin labial cortical plate and mild apical blunting; avoid excessive labial root torque during finishing.',
+    'Minor 0.5mm lower midline discrepancy at T3 Final is within clinically acceptable aesthetic thresholds (<2.0mm).',
+  ],
+  critiqueWarningsAr: [
+    'جميع المشاكل التقويمية الفعلية المسجلة في هذه الحالة مرتبطة بأهداف علاجية وميكانيكا حيوية واضحة.',
+    'تنبيه سريري: يُظهر فحص (CBCT) رقة في الصفيحة الدهليزية وتسطحاً ذروياً طفيفاً؛ يُنصح بتجنب العزم الجذري المفرط أثناء مرحلة الإنهاء (Finishing).',
+    'انحراف خط الوسط السفلي المتبقي (0.5 ملم) في المرحلة النهائية يقع ضمن الحدود التجميلية والوظيفية المقبولة سريرياً.',
+  ],
+  treatmentOptionsDiscussion:
+    'Comparison of Options A, B, and C: Option A (4-premolar extraction + TADs) is biomechanically superior to Option B (IZC Distalization) because resolving 6.5mm upper crowding + 7.5mm overjet requires ~10.2mm per side of space. Distalizing upper molars >4mm in a hyperdivergent patient (SN-MP 36°) risks clockwise mandibular rotation and worsening chin retrusion.',
+  treatmentOptionsDiscussionAr:
+    'مقارنة البدائل العلاجية (أ، ب، ج): الخيار الأول (خلع الضواحك الأربعة مع زرعات الإرساء الهيكلي TADs) يتفوق ميكانيكياً على الخيار الثاني (الإرجاع الكلي بدون خلع عبر زرعات العرف الوجني IZC)، لأن حل ازدحام علوي بمقدار 6.5 ملم مع إنقاص بروز سهمي 7.5 ملم يتطلب مسافة تقارب 10.2 ملم في كل جهة، كما أن إرجاع الأرحاء في مريض ذي زاوية عمودية عالية (SN-MP = 36°) قد يؤدي لدوران الفك السفلي مع عقارب الساعة وزيادة تراجع الذقن.',
+  evidenceReferences: [
+    {
+      citation: 'Proffit WR, Fields HW, Larson BE, Sarver DM. Contemporary Orthodontics (6th ed., 2019).',
+      relevance: 'Biomechanics of en-masse space closure using skeletal anchorage in Class II Div 1 camouflage.',
+      relevanceAr: 'الميكانيكا الحيوية لإغلاق المسافات الكتلي باستخدام الإرساء الهيكلي في حالات التمويه التقويمي للصنف الثاني.',
+    },
+    {
+      citation: 'McNamara JA Jr. A method of cephalometric evaluation. Am J Orthod. 1984;86(6):449-469.',
+      relevance: 'Sagittal evaluation of Point A and Pogonion to Nasion Perpendicular.',
+      relevanceAr: 'التقييم السيفالومتري السهمي لموقع الفك العلوي والذقن بالنسبة للعمود النازل من النقطة الأنفية (Nasion Perpendicular).',
+    },
+  ],
+};
+
 export const AIDecisionSupportView: React.FC<AIDecisionSupportViewProps> = ({
   orthoCase,
   isOnline,
@@ -72,78 +145,19 @@ export const AIDecisionSupportView: React.FC<AIDecisionSupportViewProps> = ({
   const [error, setError] = React.useState<string | null>(null);
   const [acceptedIndices, setAcceptedIndices] = React.useState<number[]>([]);
 
-  const [result, setResult] = React.useState<AIConsultResponse>({
-    summary:
-      'Case ORT-2026-00104 presents a well-documented Class II Div 1 malocclusion on a mild Class II hyperdivergent skeletal base (ANB 5.5°, SN-MP 36°). The selected 4-premolar extraction plan with bilateral maxillary TADs directly addresses both the 6.5mm upper crowding and 7.5mm overjet while maintaining vertical control.',
-    summaryAr:
-      'تُظهر الحالة (ORT-2026-00104) سوء إطباق صنف ثانٍ قسم أول على قاعدة هيكلية من الصنف الثاني مع نمط عمودي متباعد (ANB = 5.5°، SN-MP = 36°). الخطة المختارة بخلع الضواحك الأربعة مع زرعات الإرساء الهيكلي العلوية (TADs) تعالج الازدحام العلوي الشديد (6.5 ملم) والبروز السهمي (Overjet 7.5mm) بكفاءة مع الحفاظ على البعد العمودي.',
-    certaintyBreakdown: [
-      {
-        statement: 'Skeletal Class II sagittal discrepancy with mild hyperdivergent pattern',
-        statementAr: 'سوء علاقة هيكلية سهمية من الصنف الثاني (Class II) مع نمط عمودي متباعد',
-        level: 'CONFIRMED',
-        evidenceFromRecord: 'T0 Cephalometrics: ANB = 5.5° (Norm 2°±2°), Wits = +3.5mm, GoGn-SN = 36.0°.',
-        evidenceAr: 'قياسات السيفالومتري الأولية (T0): زاوية ANB = 5.5°، تقييم Wits = +3.5 ملم، زاوية GoGn-SN = 36.0°.',
-      },
-      {
-        statement: 'Bimaxillary dentoalveolar proclination and severe upper arch length deficiency',
-        statementAr: 'ميلان دهليزي للقواطع العلوية والسفلية مع نقص شديد في طول القوس العلوية',
-        level: 'CONFIRMED',
-        evidenceFromRecord: 'U1-SN = 112.0°, IMPA = 96.5°, U1-L1 = 115.0°, Upper crowding = 6.5mm, Lower crowding = 5.0mm.',
-        evidenceAr: 'ميلان القواطع العلوية (U1-SN = 112°)، والسفلية (IMPA = 96.5°)، والازدحام العلوي 6.5 ملم والسفلي 5.0 ملم.',
-      },
-      {
-        statement: 'Risk of labial alveolar bone dehiscence if treated non-extraction',
-        statementAr: 'خطر انكشاف الصفيحة العظمية الدهليزية (Dehiscence) في حال العلاج بدون خلع',
-        level: 'LIKELY',
-        evidenceFromRecord: 'CBCT assessment notes "Thin Labial Cortical Plate" combined with IMPA already at 96.5°.',
-        evidenceAr: 'فحص الأشعة المقطعية (CBCT) يُظهر رقة الصفيحة القشرية الدهليزية مع ميلان قواطع سفلية مرتفع (IMPA = 96.5°).',
-      },
-      {
-        statement: 'Long-term post-retention stability of 6.5mm incisor retraction',
-        statementAr: 'ثبات طويل الأمد لإرجاع القواطع العلوية مسافة 6.5 ملم بعد التثبيت',
-        level: 'POSSIBLE',
-        evidenceFromRecord: 'Requires verification of passive lip seal and strict dual retention (Fixed 3-3 + nighttime Essix).',
-        evidenceAr: 'يتطلب التحقق من كفاءة إطباق الشفاه السلبية والالتزام بالتثبيت المزدوج (مثبت لساني ثابت + قالب شفاف ليلي).',
-      },
-    ],
-    suggestedProblems: [
-      {
-        category: 'Dental',
-        problemEn: 'Apical root resorption risk on maxillary central incisors during 6.5mm bodily retraction',
-        problemAr: 'خطر امتصاص ذروة الجذور في القواطع المركزية العلوية أثناء الإرجاع الجسمي لمسافة 6.5 ملم',
-        objectiveEn: 'Limit light continuous retraction forces to 150g per side and take 6-month progress periapical/panoramic radiographs',
-        objectiveAr: 'تطبيق قوى مستمرة خفيفة (150 غرام لكل جهة) مع مراقبة شعاعية دورية كل 6 أشهر لجذور القواطع',
-        strategyEn: '150g NiTi closed coil springs on 0.019×0.025 SS wire with controlled lingual root torque',
-      },
-    ],
-    critiqueWarnings: [
-      'Every documented Actual Problem in this case has a corresponding Treatment Objective and Biomechanical Strategy.',
-      'Caution: CBCT records show a thin labial cortical plate and mild apical blunting; avoid excessive labial root torque during finishing.',
-      'Minor 0.5mm lower midline discrepancy at T3 Final is within clinically acceptable aesthetic thresholds (<2.0mm).',
-    ],
-    critiqueWarningsAr: [
-      'جميع المشاكل التقويمية الفعلية المسجلة في هذه الحالة مرتبطة بأهداف علاجية وميكانيكا حيوية واضحة.',
-      'تنبيه سريري: يُظهر فحص (CBCT) رقة في الصفيحة الدهليزية وتسطحاً ذروياً طفيفاً؛ يُنصح بتجنب العزم الجذري المفرط أثناء مرحلة الإنهاء (Finishing).',
-      'انحراف خط الوسط السفلي المتبقي (0.5 ملم) في المرحلة النهائية يقع ضمن الحدود التجميلية والوظيفية المقبولة سريرياً.',
-    ],
-    treatmentOptionsDiscussion:
-      'Comparison of Options A, B, and C: Option A (4-premolar extraction + TADs) is biomechanically superior to Option B (IZC Distalization) because resolving 6.5mm upper crowding + 7.5mm overjet requires ~10.2mm per side of space. Distalizing upper molars >4mm in a hyperdivergent patient (SN-MP 36°) risks clockwise mandibular rotation and worsening chin retrusion.',
-    treatmentOptionsDiscussionAr:
-      'مقارنة البدائل العلاجية (أ، ب، ج): الخيار الأول (خلع الضواحك الأربعة مع زرعات الإرساء الهيكلي TADs) يتفوق ميكانيكياً على الخيار الثاني (الإرجاع الكلي بدون خلع عبر زرعات العرف الوجني IZC)، لأن حل ازدحام علوي بمقدار 6.5 ملم مع إنقاص بروز سهمي 7.5 ملم يتطلب مسافة تقارب 10.2 ملم في كل جهة، كما أن إرجاع الأرحاء في مريض ذي زاوية عمودية عالية (SN-MP = 36°) قد يؤدي لدوران الفك السفلي مع عقارب الساعة وزيادة تراجع الذقن.',
-    evidenceReferences: [
-      {
-        citation: 'Proffit WR, Fields HW, Larson BE, Sarver DM. Contemporary Orthodontics (6th ed., 2019).',
-        relevance: 'Biomechanics of en-masse space closure using skeletal anchorage in Class II Div 1 camouflage.',
-        relevanceAr: 'الميكانيكا الحيوية لإغلاق المسافات الكتلي باستخدام الإرساء الهيكلي في حالات التمويه التقويمي للصنف الثاني.',
-      },
-      {
-        citation: 'McNamara JA Jr. A method of cephalometric evaluation. Am J Orthod. 1984;86(6):449-469.',
-        relevance: 'Sagittal evaluation of Point A and Pogonion to Nasion Perpendicular.',
-        relevanceAr: 'التقييم السيفالومتري السهمي لموقع الفك العلوي والذقن بالنسبة للعمود النازل من النقطة الأنفية (Nasion Perpendicular).',
-      },
-    ],
+  const [result, setResult] = React.useState<AIConsultResponse | null>(() => {
+    return orthoCase.isDemo && orthoCase.id === 'ORT-2026-00104' ? DEMO_SARA_AI_RESPONSE : null;
   });
+
+  React.useEffect(() => {
+    if (orthoCase.isDemo && orthoCase.id === 'ORT-2026-00104') {
+      setResult(DEMO_SARA_AI_RESPONSE);
+    } else {
+      setResult(null);
+    }
+    setAcceptedIndices([]);
+    setError(null);
+  }, [orthoCase.id, orthoCase.isDemo]);
 
   const runAIConsultation = async () => {
     if (!isOnline) {
@@ -351,7 +365,24 @@ export const AIDecisionSupportView: React.FC<AIDecisionSupportViewProps> = ({
         )}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      {!result ? (
+        <div className="p-10 text-center bg-white border border-slate-200 rounded-lg space-y-3">
+          <div className="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center mx-auto text-slate-400">
+            <BrainCircuit className="w-6 h-6 text-slate-400" />
+          </div>
+          <h3 className="text-sm font-semibold text-slate-800">
+            {language === 'ar'
+              ? 'لا توجد مراجعة ذكية مسجلة بعد لهذه الحالة السريرية'
+              : 'No AI Clinical Analysis Run Yet for this Case'}
+          </h3>
+          <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
+            {language === 'ar'
+              ? 'اختر نمط المناقشة المطلوبة وانقر على "تشغيل التحليل والمناقشة" لمعالجة سجلات الحالة الحالية ومقارنتها مع القواعد السريرية والأدلة الطبية.'
+              : 'Select a consultation topic and click "Run AI Clinical Analysis" to review current case records against clinical rules and evidence-based literature.'}
+          </p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-5">
           <div className="bg-white border border-slate-200 rounded-lg p-5 space-y-3">
             <div className="flex items-center justify-between">
@@ -533,6 +564,7 @@ export const AIDecisionSupportView: React.FC<AIDecisionSupportViewProps> = ({
           </div>
         </div>
       </div>
+      )}
     </div>
   );
 };

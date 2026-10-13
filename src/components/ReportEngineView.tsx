@@ -999,44 +999,54 @@ export const ReportEngineView: React.FC<ReportEngineViewProps> = ({
                   </tr>
                 </thead>
                 <tbody>
-                  {orthoCase.problemList.map((item) => (
-                    <tr key={item.id} className="border-b border-slate-200">
-                      <td className="py-2 px-3 font-medium text-slate-900">
-                        <div>{formatDomainSection(language, item.domain)}</div>
-                        <div className="text-[11px] text-slate-500">
-                          {formatFindingCategory(language, item.classification)}
-                        </div>
-                      </td>
-                      <td className="py-2 px-3 text-slate-800">
-                        {language === 'ar' ? item.findingAr : item.findingEn}
-                      </td>
-                      <td className="py-2 px-3 text-slate-800">
-                        {item.classification === 'Normal Finding' ? (
-                          <span className="text-slate-400 italic">
-                            {language === 'ar'
-                              ? 'معيار طبيعي — لا يتطلب تدخلاً'
-                              : 'Normal Finding — No intervention required'}
-                          </span>
-                        ) : language === 'ar' ? (
-                          item.objectiveAr
-                        ) : (
-                          item.objectiveEn
-                        )}
-                      </td>
-                      <td className="py-2 px-3 text-slate-700">
-                        {(language === 'ar' ? item.strategyMechanicsAr : item.strategyMechanicsEn) ||
-                          '—'}
-                      </td>
-                      <td className="py-2 px-3">
-                        <div className="font-semibold text-slate-900">
-                          {formatOutcomeStatus(language, item.outcomeStatus)}
-                        </div>
-                        <div className="text-slate-600 mt-0.5">
-                          {language === 'ar' ? item.outcomeResultAr : item.outcomeResultEn}
-                        </div>
+                  {orthoCase.problemList.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="py-6 px-3 text-center text-slate-500 italic">
+                        {language === 'ar'
+                          ? 'لا توجد مشاكل أو أهداف مسجلة لهذه الحالة بعد'
+                          : 'No clinical problems or objectives documented yet'}
                       </td>
                     </tr>
-                  ))}
+                  ) : (
+                    orthoCase.problemList.map((item) => (
+                      <tr key={item.id} className="border-b border-slate-200">
+                        <td className="py-2 px-3 font-medium text-slate-900">
+                          <div>{formatDomainSection(language, item.domain)}</div>
+                          <div className="text-[11px] text-slate-500">
+                            {formatFindingCategory(language, item.classification)}
+                          </div>
+                        </td>
+                        <td className="py-2 px-3 text-slate-800">
+                          {language === 'ar' ? item.findingAr : item.findingEn}
+                        </td>
+                        <td className="py-2 px-3 text-slate-800">
+                          {item.classification === 'Normal Finding' ? (
+                            <span className="text-slate-400 italic">
+                              {language === 'ar'
+                                ? 'معيار طبيعي — لا يتطلب تدخلاً'
+                                : 'Normal Finding — No intervention required'}
+                            </span>
+                          ) : language === 'ar' ? (
+                            item.objectiveAr
+                          ) : (
+                            item.objectiveEn
+                          )}
+                        </td>
+                        <td className="py-2 px-3 text-slate-700">
+                          {(language === 'ar' ? item.strategyMechanicsAr : item.strategyMechanicsEn) ||
+                            '—'}
+                        </td>
+                        <td className="py-2 px-3">
+                          <div className="font-semibold text-slate-900">
+                            {formatOutcomeStatus(language, item.outcomeStatus)}
+                          </div>
+                          <div className="text-slate-600 mt-0.5">
+                            {language === 'ar' ? item.outcomeResultAr : item.outcomeResultEn}
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
                 </tbody>
               </table>
             </div>
@@ -1056,14 +1066,17 @@ export const ReportEngineView: React.FC<ReportEngineViewProps> = ({
                 <ShieldCheck className="w-4 h-4" />
                 <span>
                   {language === 'ar'
-                    ? `معتمد بواسطة ${orthoCase.diagnosis.approvedBy} (${orthoCase.diagnosis.updatedAt})`
-                    : `Approved by ${orthoCase.diagnosis.approvedBy} (${orthoCase.diagnosis.updatedAt})`}
+                    ? `معتمد بواسطة ${orthoCase.diagnosis.approvedBy || '—'} (${orthoCase.diagnosis.updatedAt || '—'})`
+                    : `Approved by ${orthoCase.diagnosis.approvedBy || '—'} (${orthoCase.diagnosis.updatedAt || '—'})`}
                 </span>
               </div>
               <p className="text-slate-900 font-medium leading-relaxed">
-                {language === 'ar'
+                {(language === 'ar'
                   ? orthoCase.diagnosis.comprehensiveStatementAr
-                  : orthoCase.diagnosis.comprehensiveStatementEn}
+                  : orthoCase.diagnosis.comprehensiveStatementEn) ||
+                  (language === 'ar'
+                    ? 'لم يتم تسجيل ملخص التشخيص المعتمد لهذه الحالة بعد.'
+                    : 'No approved diagnosis statement recorded for this case yet.')}
               </p>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-2 border-t border-slate-200">
                 <div>
@@ -1098,46 +1111,54 @@ export const ReportEngineView: React.FC<ReportEngineViewProps> = ({
                 : '09. Treatment Alternatives & Doctor-Selected Plan'}
             </h3>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
-              {orthoCase.treatmentOptions.map((opt) => (
-                <div
-                  key={opt.id}
-                  className={`p-3.5 rounded border space-y-1.5 ${
-                    opt.isSelected ? 'border-blue-600 bg-blue-50/30' : 'border-slate-200 bg-white'
-                  }`}
-                >
-                  <div className="flex items-center justify-between font-semibold text-slate-900">
-                    <span>
-                      {opt.label}: {opt.approachType}
-                    </span>
-                    {opt.isSelected && (
-                      <span className="text-blue-700 text-[11px]">
-                        {language === 'ar' ? '★ الخطة المعتمدة' : '★ SELECTED PLAN'}
-                      </span>
-                    )}
-                  </div>
-                  <div className="font-medium text-slate-800 leading-relaxed">
-                    {language === 'ar' ? opt.titleAr : opt.titleEn}
-                  </div>
-                  <div>
-                    <span className="font-semibold">
-                      {language === 'ar' ? 'خطة الخلع: ' : 'Extractions: '}
-                    </span>
-                    {opt.extractionTeeth}
-                  </div>
-                  <div>
-                    <span className="font-semibold">
-                      {language === 'ar' ? 'الإرساء (Anchorage): ' : 'Anchorage: '}
-                    </span>
-                    {opt.anchoragePlan}
-                  </div>
-                  <div>
-                    <span className="font-semibold">
-                      {language === 'ar' ? 'الجهاز والميكانيكا: ' : 'Appliance: '}
-                    </span>
-                    {opt.applianceSystem}
-                  </div>
+              {orthoCase.treatmentOptions.length === 0 ? (
+                <div className="col-span-full p-6 text-center text-slate-500 bg-slate-50 border border-slate-200 rounded italic">
+                  {language === 'ar'
+                    ? 'لم يتم تحديد بدائل علاجية أو اعتماد خطة علاجية بعد'
+                    : 'No treatment plan alternatives or approved plans documented yet'}
                 </div>
-              ))}
+              ) : (
+                orthoCase.treatmentOptions.map((opt) => (
+                  <div
+                    key={opt.id}
+                    className={`p-3.5 rounded border space-y-1.5 ${
+                      opt.isSelected ? 'border-blue-600 bg-blue-50/30' : 'border-slate-200 bg-white'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between font-semibold text-slate-900">
+                      <span>
+                        {opt.label}: {opt.approachType}
+                      </span>
+                      {opt.isSelected && (
+                        <span className="text-blue-700 text-[11px]">
+                          {language === 'ar' ? '★ الخطة المعتمدة' : '★ SELECTED PLAN'}
+                        </span>
+                      )}
+                    </div>
+                    <div className="font-medium text-slate-800 leading-relaxed">
+                      {language === 'ar' ? opt.titleAr : opt.titleEn}
+                    </div>
+                    <div>
+                      <span className="font-semibold">
+                        {language === 'ar' ? 'خطة الخلع: ' : 'Extractions: '}
+                      </span>
+                      {opt.extractionTeeth}
+                    </div>
+                    <div>
+                      <span className="font-semibold">
+                        {language === 'ar' ? 'الإرساء (Anchorage): ' : 'Anchorage: '}
+                      </span>
+                      {opt.anchoragePlan}
+                    </div>
+                    <div>
+                      <span className="font-semibold">
+                        {language === 'ar' ? 'الجهاز والميكانيكا: ' : 'Appliance: '}
+                      </span>
+                      {opt.applianceSystem}
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
           </section>
         )}
@@ -1151,7 +1172,14 @@ export const ReportEngineView: React.FC<ReportEngineViewProps> = ({
                 : '10. Longitudinal Before / Progress / Final Comparison'}
             </h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {orthoCase.photos.map((ph) => (
+              {orthoCase.photos.length === 0 ? (
+                <div className="col-span-full p-6 text-center text-slate-500 bg-slate-50 border border-slate-200 rounded italic">
+                  {language === 'ar'
+                    ? 'لا توجد صور سريرية مسجلة لهذه الحالة'
+                    : 'No clinical photographs attached to this case'}
+                </div>
+              ) : (
+                orthoCase.photos.map((ph) => (
                 <div key={ph.id} className="border border-slate-200 rounded p-3 space-y-2 text-xs">
                   <ClinicalRecordIllustration
                     svgType={ph.svgType}
@@ -1166,7 +1194,8 @@ export const ReportEngineView: React.FC<ReportEngineViewProps> = ({
                     {language === 'ar' ? ph.captionAr : ph.captionEn}
                   </p>
                 </div>
-              ))}
+              ))
+            )}
             </div>
           </section>
         )}

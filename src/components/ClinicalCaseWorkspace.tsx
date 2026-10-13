@@ -894,12 +894,21 @@ export const ClinicalCaseWorkspace: React.FC<ClinicalCaseWorkspaceProps> = ({
                   : 'Try changing Sagittal Classification to "Skeletal Class I" while ANB is 5.5° to test the real-time Clinical Consistency Engine.'}
               </p>
             </div>
-            <span className="font-mono text-xs text-emerald-700 font-semibold flex items-center gap-1">
-              <ShieldCheck className="w-4 h-4" />
-              {language === 'ar'
-                ? `الإصدار المعتمد v${orthoCase.diagnosis.version}`
-                : `Version v${orthoCase.diagnosis.version} · ${orthoCase.diagnosis.origin}`}
-            </span>
+            {orthoCase.diagnosis.version > 0 && orthoCase.diagnosis.approvedBy ? (
+              <span className="font-mono text-xs text-emerald-700 font-semibold flex items-center gap-1 bg-emerald-50 px-2 py-1 rounded border border-emerald-200">
+                <ShieldCheck className="w-4 h-4" />
+                {language === 'ar'
+                  ? `الإصدار المعتمد v${orthoCase.diagnosis.version}`
+                  : `Approved v${orthoCase.diagnosis.version} · ${orthoCase.diagnosis.origin}`}
+              </span>
+            ) : (
+              <span className="font-mono text-xs text-amber-700 font-semibold flex items-center gap-1 bg-amber-50 px-2 py-1 rounded border border-amber-200">
+                <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
+                {language === 'ar'
+                  ? 'مسودة أولية (قيد التشخيص والمراجعة)'
+                  : 'Initial Draft (Pending Clinician Approval)'}
+              </span>
+            )}
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
@@ -1093,7 +1102,23 @@ export const ClinicalCaseWorkspace: React.FC<ClinicalCaseWorkspaceProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200">
-                {orthoCase.problemList.map((prob) => (
+                {orthoCase.problemList.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="py-8 text-center text-slate-500 bg-slate-50/50">
+                      <div className="font-semibold text-slate-700 text-xs">
+                        {language === 'ar'
+                          ? 'لا توجد مشاكل أو ملاحظات سريرية مسجلة لهذه الحالة بعد'
+                          : 'No Clinical Findings or Problems Recorded Yet'}
+                      </div>
+                      <div className="text-[11px] text-slate-500 mt-1">
+                        {language === 'ar'
+                          ? 'استخدم نموذج الإدخال أدناه لإضافة ملاحظات الفحص السريري وتحديد المشاكل التقويمية والأهداف العلاجية.'
+                          : 'Use the quick entry form below to add clinical examination findings, orthodontic problems, and treatment objectives.'}
+                      </div>
+                    </td>
+                  </tr>
+                ) : (
+                  orthoCase.problemList.map((prob) => (
                   <tr key={prob.id} className="align-top">
                     <td className="py-3 pe-3 whitespace-nowrap">
                       <div className="font-semibold text-slate-900">
@@ -1181,7 +1206,8 @@ export const ClinicalCaseWorkspace: React.FC<ClinicalCaseWorkspaceProps> = ({
                       </div>
                     </td>
                   </tr>
-                ))}
+                ))
+              )}
               </tbody>
             </table>
           </div>
@@ -1535,7 +1561,24 @@ export const ClinicalCaseWorkspace: React.FC<ClinicalCaseWorkspaceProps> = ({
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-            {orthoCase.treatmentOptions.map((opt) => (
+            {orthoCase.treatmentOptions.length === 0 ? (
+              <div className="col-span-full py-12 px-6 text-center bg-slate-50 border border-dashed border-slate-300 rounded-lg">
+                <div className="w-10 h-10 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-3 text-slate-400">
+                  <AlertTriangle className="w-5 h-5 text-slate-400" />
+                </div>
+                <h3 className="text-sm font-semibold text-slate-800">
+                  {language === 'ar'
+                    ? 'لا توجد بدائل أو خطة علاجية مسجلة بعد'
+                    : 'No Treatment Plans or Alternatives Formulated Yet'}
+                </h3>
+                <p className="text-xs text-slate-500 mt-1 max-w-lg mx-auto leading-relaxed">
+                  {language === 'ar'
+                    ? 'تتطلب الخطة العلاجية استكمال السجلات الأولية (الفحص السريري، الأشعة، والتشخيص المعتمد). لم يتم اختيار أو اعتماد أي خطة علاجية لهذه الحالة حتى الآن.'
+                    : 'Formulating a treatment plan requires completing records, clinical examination, and diagnosis. No treatment options or doctor-approved plans exist for this case yet.'}
+                </p>
+              </div>
+            ) : (
+              orthoCase.treatmentOptions.map((opt) => (
               <div
                 key={opt.id}
                 className={`rounded-lg border p-5 flex flex-col justify-between space-y-4 ${
@@ -1632,7 +1675,8 @@ export const ClinicalCaseWorkspace: React.FC<ClinicalCaseWorkspaceProps> = ({
                     : `Select ${opt.label} as Approved Plan`}
                 </button>
               </div>
-            ))}
+            ))
+          )}
           </div>
         </div>
       </div>
@@ -1839,7 +1883,19 @@ export const ClinicalCaseWorkspace: React.FC<ClinicalCaseWorkspaceProps> = ({
           </div>
 
           <div className="space-y-4">
-            {orthoCase.visits.map((v) => (
+            {orthoCase.visits.length === 0 ? (
+              <div className="p-8 text-center text-slate-500 bg-slate-50 rounded-lg border border-dashed border-slate-300 text-xs">
+                <div className="font-semibold text-slate-700">
+                  {language === 'ar' ? 'لا توجد جلسات علاجية مسجلة بعد' : 'No Clinical Visits Logged Yet'}
+                </div>
+                <div className="text-slate-400 mt-1">
+                  {language === 'ar'
+                    ? 'استخدم نموذج إدخال الجلسة السريع على اليسار لتسجيل أول جلسة للحالة.'
+                    : 'Use the chairside entry form on the left to record the first clinical visit.'}
+                </div>
+              </div>
+            ) : (
+              orthoCase.visits.map((v) => (
               <div
                 key={v.id}
                 className="p-4 bg-slate-50 border border-slate-200 rounded-lg space-y-2 text-xs"
@@ -1876,7 +1932,8 @@ export const ClinicalCaseWorkspace: React.FC<ClinicalCaseWorkspaceProps> = ({
                   </div>
                 )}
               </div>
-            ))}
+            ))
+            )}
           </div>
         </div>
       </div>
@@ -1909,7 +1966,20 @@ export const ClinicalCaseWorkspace: React.FC<ClinicalCaseWorkspaceProps> = ({
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {orthoCase.photos.map((ph) => (
+          {orthoCase.photos.length === 0 ? (
+            <div className="col-span-full py-12 px-6 text-center bg-slate-50 border border-dashed border-slate-300 rounded-lg">
+              <Camera className="w-10 h-10 text-slate-300 mx-auto mb-2" />
+              <div className="text-xs font-semibold text-slate-700">
+                {language === 'ar' ? 'لا توجد صور سريرية مسجلة لهذه الحالة' : 'No Clinical Photographs Attached to this Case'}
+              </div>
+              <div className="text-[11px] text-slate-500 mt-1">
+                {language === 'ar'
+                  ? 'لم يتم إرفاق صور أو رسومات توضيحية. الصور التجريبية تظهر فقط في الحالات التجريبية (Demo Cases).'
+                  : 'No patient photos attached. Demo illustrations are restricted to synthetic demo cases.'}
+              </div>
+            </div>
+          ) : (
+            orthoCase.photos.map((ph) => (
             <div
               key={ph.id}
               className="border border-slate-200 rounded-lg p-3.5 space-y-2.5 bg-slate-50/50 text-xs"
@@ -1932,7 +2002,8 @@ export const ClinicalCaseWorkspace: React.FC<ClinicalCaseWorkspaceProps> = ({
                 {language === 'ar' ? ph.captionAr : ph.captionEn}
               </p>
             </div>
-          ))}
+          ))
+          )}
         </div>
       </div>
 
@@ -1978,10 +2049,14 @@ export const ClinicalCaseWorkspace: React.FC<ClinicalCaseWorkspaceProps> = ({
                 <td className="py-2.5 text-end">
                   {(orthoCase.occlusal.overjetCurrentMm - orthoCase.occlusal.overjetInitialMm).toFixed(1)} mm
                 </td>
-                <td className="py-2.5 ps-4 font-sans text-emerald-700">
-                  {language === 'ar'
-                    ? '✓ عاد إلى المعدل الطبيعي لصنف أول مثالي'
-                    : '✓ Normalized to Class I ideal'}
+                <td className="py-2.5 ps-4 font-sans text-slate-700">
+                  {orthoCase.visits.length > 0
+                    ? language === 'ar'
+                      ? '✓ عاد إلى المعدل الطبيعي لصنف أول مثالي'
+                      : '✓ Normalized to Class I ideal'
+                    : language === 'ar'
+                    ? 'قيد الفحص والتسجيل الأولي'
+                    : 'Baseline — Pending Active Treatment'}
                 </td>
               </tr>
               <tr>
@@ -1995,10 +2070,14 @@ export const ClinicalCaseWorkspace: React.FC<ClinicalCaseWorkspaceProps> = ({
                 <td className="py-2.5 text-end">
                   {(orthoCase.occlusal.overbiteCurrentMm - orthoCase.occlusal.overbiteInitialMm).toFixed(1)} mm
                 </td>
-                <td className="py-2.5 ps-4 font-sans text-emerald-700">
-                  {language === 'ar'
-                    ? '✓ تم تسطيح قوس سبي (Curve of Spee) بنجاح'
-                    : '✓ Curve of Spee leveled'}
+                <td className="py-2.5 ps-4 font-sans text-slate-700">
+                  {orthoCase.visits.length > 0
+                    ? language === 'ar'
+                      ? '✓ تم تسطيح قوس سبي (Curve of Spee) بنجاح'
+                      : '✓ Curve of Spee leveled'
+                    : language === 'ar'
+                    ? 'قيد الفحص والتسجيل الأولي'
+                    : 'Baseline — Pending Active Treatment'}
                 </td>
               </tr>
               <tr>
@@ -2014,10 +2093,14 @@ export const ClinicalCaseWorkspace: React.FC<ClinicalCaseWorkspaceProps> = ({
                     ? `${(t3Ceph.values['ANB'] - t0Ceph.values['ANB']).toFixed(1)}°`
                     : '—'}
                 </td>
-                <td className="py-2.5 ps-4 font-sans text-emerald-700">
-                  {language === 'ar'
-                    ? '✓ تحسن العلاقة السهمية للقاعدة القمية'
-                    : '✓ Sagittal apical base improvement'}
+                <td className="py-2.5 ps-4 font-sans text-slate-700">
+                  {t0Ceph && t3Ceph
+                    ? language === 'ar'
+                      ? '✓ تحسن العلاقة السهمية للقاعدة القمية'
+                      : '✓ Sagittal apical base improvement'
+                    : language === 'ar'
+                    ? 'يتطلب تسجيل القياسات السيفالومترية'
+                    : 'Requires Cephalometric Records'}
                 </td>
               </tr>
               <tr>
@@ -2033,10 +2116,14 @@ export const ClinicalCaseWorkspace: React.FC<ClinicalCaseWorkspaceProps> = ({
                     ? `${(t3Ceph.values['U1-SN'] - t0Ceph.values['U1-SN']).toFixed(1)}°`
                     : '—'}
                 </td>
-                <td className="py-2.5 ps-4 font-sans text-emerald-700">
-                  {language === 'ar'
-                    ? '✓ إرجاع جسمي مضبوط العزم الجذري (Root Torque)'
-                    : '✓ Controlled bodily retraction with torque'}
+                <td className="py-2.5 ps-4 font-sans text-slate-700">
+                  {t0Ceph && t3Ceph
+                    ? language === 'ar'
+                      ? '✓ إرجاع جسمي مضبوط العزم الجذري (Root Torque)'
+                      : '✓ Controlled bodily retraction with torque'
+                    : language === 'ar'
+                    ? 'يتطلب تسجيل القياسات السيفالومترية'
+                    : 'Requires Cephalometric Records'}
                 </td>
               </tr>
             </tbody>

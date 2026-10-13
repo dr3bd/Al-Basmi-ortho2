@@ -22,12 +22,22 @@ import {
 } from 'lucide-react';
 import {
   AuditLogItem,
+  CBCTAndRadiographicRecord,
+  CaseFinancialRecord,
   ClinicalVisit,
+  DiagnosisRecord,
+  DomainSection,
+  ExtraoralExam,
+  FindingCategory,
+  IntraoralExam,
   InventoryMaterial,
   LanguageMode,
+  OcclusalExam,
   OrthodonticCase,
+  OutcomeStatus,
   Patient,
   ProblemObjectiveItem,
+  ResidualAndRetentionRecord,
   SyncQueueEntry,
 } from './types/orthodontics';
 import {
@@ -51,7 +61,15 @@ import { ReportEngineView } from './components/ReportEngineView';
 import { AIDecisionSupportView } from './components/AIDecisionSupportView';
 import { OperationalAndSyncView } from './components/OperationalAndSyncView';
 import { useClinicalStorage } from './storage/context/ClinicalStorageContext.tsx';
-import { SqlitePatientRow } from './domain/p0SqliteSchema.ts';
+import {
+  SqlitePatientRow,
+  SqliteOrthodonticCaseRow,
+  SqliteVisitRow,
+  SqliteProblemRow,
+  SqliteDiagnosisVersionRow,
+  SqliteDiagnosisItemRow,
+  SqliteClinicalFindingRow,
+} from './domain/p0SqliteSchema.ts';
 
 /**
  * Maps an authoritative SQLite patient row into the UI presentation model.
@@ -74,6 +92,338 @@ function mapSqlitePatientToUi(row: SqlitePatientRow): Patient {
     allergies: 'None',
     notes: row.general_notes || '',
     createdAt: row.created_at ? row.created_at.slice(0, 10) : new Date().toISOString().slice(0, 10),
+    isDemo: false, // Authoritative SQLite patient
+  };
+}
+
+/**
+ * Maps an authoritative SQLite visit row to UI presentation model.
+ */
+function mapSqliteVisitToUi(row: SqliteVisitRow, index: number): ClinicalVisit {
+  return {
+    id: row.id,
+    visitNumber: index + 1,
+    date: row.visit_date,
+    stage: 'T1_Progress',
+    visitType: (row.visit_type as ClinicalVisit['visitType']) || 'Adjustment',
+    procedures: row.chief_reason ? [row.chief_reason] : ['Routine Clinical Check'],
+    upperArchwire: '0.016 NiTi Upper',
+    lowerArchwire: '0.016 NiTi Lower',
+    elasticsConfig: 'None',
+    materialsIssuedIds: [],
+    clinicalNotesEn: row.clinical_notes || '',
+    clinicalNotesAr: row.clinical_notes || '',
+    nextPlan: 'Continue biomechanics alignment',
+    nextAppointmentDate: row.next_visit_date || '2026-11-15',
+  };
+}
+
+/**
+ * Maps an authoritative SQLite orthodontic case row into the UI presentation model.
+ */
+/**
+ * Maps an authoritative SQLite problem row to UI presentation model.
+ */
+function mapSqliteProblemToUi(row: SqliteProblemRow): ProblemObjectiveItem {
+  const domainCategoryMap: Record<string, DomainSection> = {
+    SKELETAL: 'Skeletal',
+    DENTAL: 'Dental',
+    FACIAL: 'Soft Tissue',
+    FUNCTIONAL: 'Occlusal',
+    AIRWAY: 'CBCT / Radiographic',
+    TMJ: 'Skeletal',
+    PERIODONTAL: 'Dental',
+    OTHER: 'Dental',
+  };
+
+  const outcomeStatusMap: Record<string, OutcomeStatus> = {
+    ACTIVE: 'In Progress',
+    RESOLVED: 'Achieved',
+    SUPERSEDED: 'Partially Achieved',
+  };
+
+  return {
+    id: row.id,
+    domain: domainCategoryMap[row.category] || 'Dental',
+    classification: row.severity === 'MILD' ? 'Clinical Finding' : 'Actual Problem',
+    findingEn: row.title,
+    findingAr: row.description || row.title,
+    objectiveEn: `Resolve ${row.problem_code}`,
+    objectiveAr: `معالجة ${row.problem_code}`,
+    strategyMechanicsEn: '',
+    strategyMechanicsAr: '',
+    outcomeResultEn: row.status === 'RESOLVED' ? 'Resolved' : 'In Progress',
+    outcomeResultAr: row.status === 'RESOLVED' ? 'تم الحل بنجاح' : 'قيد المتابعة السريرية',
+    outcomeStatus: outcomeStatusMap[row.status] || 'In Progress',
+    origin: 'Doctor-Approved',
+    approvedByDoctor: true,
+  };
+}
+
+function createBlankExtraoralExam(): ExtraoralExam {
+  return {
+    facialSymmetry: 'Symmetrical',
+    facialType: 'Mesofacial',
+    profile: 'Straight',
+    verticalProportions: 'Balanced',
+    lipCompetence: 'Competent',
+    nasolabialAngle: 'Normal (90-110°)',
+    mentolabialSulcus: 'Normal',
+    chinProminence: 'Normal',
+    smileArc: 'Consonant',
+    gingivalDisplayOnSmileMm: 0,
+    notes: '',
+  };
+}
+
+function createBlankIntraoralExam(): IntraoralExam {
+  return {
+    oralHygiene: 'Good',
+    gingivalBiotype: 'Normal',
+    maxillaryArchForm: 'Ovoid',
+    mandibularArchForm: 'Ovoid',
+    maxillaryCrowdingMm: 0,
+    mandibularCrowdingMm: 0,
+    missingTeeth: [],
+    impactedTeeth: [],
+    ectopicTeeth: [],
+    rotationsSummary: '',
+    frenumAttachment: 'Normal',
+    notes: '',
+  };
+}
+
+function createBlankOcclusalExam(): OcclusalExam {
+  return {
+    molarRight: 'Class I',
+    molarLeft: 'Class I',
+    canineRight: 'Class I',
+    canineLeft: 'Class I',
+    overjetInitialMm: 2,
+    overjetCurrentMm: 2,
+    overbiteInitialMm: 2,
+    overbiteCurrentMm: 2,
+    crossbite: 'None',
+    openBite: 'None',
+    upperMidlineMm: 0,
+    lowerMidlineMm: 0,
+    curveOfSpeeMm: 0,
+    functionalShift: 'None',
+    boltonAnteriorRatio: 77.2,
+    boltonOverallRatio: 91.3,
+  };
+}
+
+function createBlankCBCTRecord(): CBCTAndRadiographicRecord {
+  return {
+    panoramicSummary: '',
+    rootResorptionStatus: 'None',
+    alveolarBoneStatus: 'Adequate',
+    airwayAssessment: 'Normal Pharyngeal Airway',
+    tmjStatus: 'Normal Condylar Morphology',
+    cvmStage: 'CS3 (Peak)',
+    tadSafeZonesNotes: '',
+  };
+}
+
+function createBlankDiagnosisRecord(startDate: string): DiagnosisRecord {
+  return {
+    version: 0,
+    updatedAt: startDate,
+    approvedBy: '',
+    origin: 'Doctor-Approved',
+    skeletalSagittal: 'Skeletal Class I',
+    skeletalVertical: 'Normodivergent',
+    skeletalTransverse: 'Normal Transverse Maxillo-Mandibular Width',
+    dentalSummaryEn: '',
+    dentalSummaryAr: '',
+    occlusalSummaryEn: '',
+    occlusalSummaryAr: '',
+    softTissueSummaryEn: '',
+    softTissueSummaryAr: '',
+    comprehensiveStatementEn: '',
+    comprehensiveStatementAr: '',
+    differentialDiagnosis: '',
+  };
+}
+
+function createBlankRetentionRecord(): ResidualAndRetentionRecord {
+  return {
+    upperRetainer: 'Vacuum-Formed Essix',
+    lowerRetainer: 'Fixed Lingual 3-3 Bonded',
+    wearProtocol: '',
+    residualProblemsEn: [],
+    residualProblemsAr: [],
+    treatmentLimitationsEn: [],
+    treatmentLimitationsAr: [],
+    relapseRiskLevel: 'Low',
+  };
+}
+
+function createBlankFinancialRecord(): CaseFinancialRecord {
+  return {
+    totalFee: 0,
+    discount: 0,
+    labCost: 0,
+    otherDirectCost: 0,
+    currency: 'SAR',
+    installments: [],
+  };
+}
+
+function applySqliteFindingsToCaseExams(findings?: SqliteClinicalFindingRow[]): {
+  extraoral: ExtraoralExam;
+  intraoral: IntraoralExam;
+  occlusal: OcclusalExam;
+  cbctAndRadiographs: CBCTAndRadiographicRecord;
+} {
+  const extraoral = createBlankExtraoralExam();
+  const intraoral = createBlankIntraoralExam();
+  const occlusal = createBlankOcclusalExam();
+  const cbctAndRadiographs = createBlankCBCTRecord();
+
+  if (!findings || findings.length === 0) {
+    return { extraoral, intraoral, occlusal, cbctAndRadiographs };
+  }
+
+  for (const f of findings) {
+    switch (f.finding_code) {
+      case 'FACIAL_TYPE':
+        extraoral.facialType = f.value as ExtraoralExam['facialType'];
+        break;
+      case 'FACIAL_PROFILE':
+        extraoral.profile = f.value as ExtraoralExam['profile'];
+        break;
+      case 'LIP_COMPETENCE':
+        extraoral.lipCompetence = f.value as ExtraoralExam['lipCompetence'];
+        break;
+      case 'NASOLABIAL_ANGLE':
+        extraoral.nasolabialAngle = f.value as ExtraoralExam['nasolabialAngle'];
+        break;
+      case 'SMILE_ARC':
+        extraoral.smileArc = f.value as ExtraoralExam['smileArc'];
+        break;
+      case 'MAX_CROWDING_MM':
+        intraoral.maxillaryCrowdingMm = Number(f.value) || 0;
+        break;
+      case 'MAND_CROWDING_MM':
+        intraoral.mandibularCrowdingMm = Number(f.value) || 0;
+        break;
+      case 'MAX_ARCH_FORM':
+        intraoral.maxillaryArchForm = f.value as IntraoralExam['maxillaryArchForm'];
+        break;
+      case 'GINGIVAL_BIOTYPE':
+        intraoral.gingivalBiotype = f.value as IntraoralExam['gingivalBiotype'];
+        break;
+      case 'ROTATIONS_SUMMARY':
+        intraoral.rotationsSummary = f.value;
+        break;
+      case 'OVERJET_INITIAL_MM':
+        occlusal.overjetInitialMm = Number(f.value) || 0;
+        break;
+      case 'OVERJET_CURRENT_MM':
+        occlusal.overjetCurrentMm = Number(f.value) || 0;
+        break;
+      case 'MOLAR_RIGHT':
+        occlusal.molarRight = f.value as OcclusalExam['molarRight'];
+        break;
+      case 'CANINE_RIGHT':
+        occlusal.canineRight = f.value as OcclusalExam['canineRight'];
+        break;
+      case 'CROSSBITE':
+        occlusal.crossbite = f.value as OcclusalExam['crossbite'];
+        break;
+      case 'CURVE_OF_SPEE_MM':
+        occlusal.curveOfSpeeMm = Number(f.value) || 0;
+        break;
+      case 'BOLTON_ANTERIOR_RATIO':
+        occlusal.boltonAnteriorRatio = Number(f.value) || 77.2;
+        break;
+      case 'CVM_STAGE':
+        cbctAndRadiographs.cvmStage = f.value as CBCTAndRadiographicRecord['cvmStage'];
+        break;
+      case 'ALVEOLAR_BONE_STATUS':
+        cbctAndRadiographs.alveolarBoneStatus = f.value as CBCTAndRadiographicRecord['alveolarBoneStatus'];
+        break;
+      case 'ROOT_RESORPTION_STATUS':
+        cbctAndRadiographs.rootResorptionStatus = f.value as CBCTAndRadiographicRecord['rootResorptionStatus'];
+        break;
+      case 'TAD_SAFE_ZONES_NOTES':
+        cbctAndRadiographs.tadSafeZonesNotes = f.value;
+        break;
+    }
+  }
+
+  return { extraoral, intraoral, occlusal, cbctAndRadiographs };
+}
+
+/**
+ * Maps an authoritative SQLite case row to UI presentation model.
+ */
+function mapSqliteCaseToUi(
+  row: SqliteOrthodonticCaseRow,
+  patient?: Patient,
+  visits: ClinicalVisit[] = [],
+  problems?: ProblemObjectiveItem[],
+  diagnosis?: DiagnosisRecord,
+  examFindings?: SqliteClinicalFindingRow[]
+): OrthodonticCase {
+  const caseTypeUiMap: Record<string, OrthodonticCase['caseType']> = {
+    COMPREHENSIVE: 'Comprehensive Fixed Appliance',
+    INTERCEPTIVE: 'Growth Modification + Fixed',
+    ORTHOPEDIC: 'MARPE + Skeletal Anchorage',
+    SURGICAL_ORTHODONTIC: 'Surgical-Orthodontic',
+    RETREATMENT: 'Retreatment',
+    LIMITED: 'Clear Aligner Therapy',
+    RETENTION_ONLY: 'Comprehensive Fixed Appliance',
+  };
+
+  const caseStatusUiMap: Record<string, OrthodonticCase['status']> = {
+    CONSULTATION: 'Consultation',
+    RECORDS: 'Records',
+    DIAGNOSIS: 'Diagnosis',
+    TREATMENT_PLANNING: 'Treatment Planning',
+    ACTIVE_TREATMENT: 'Active Treatment',
+    FINISHING: 'Finishing',
+    DEBOND: 'Debond',
+    RETENTION: 'Retention',
+    COMPLETED: 'Completed',
+    DISCONTINUED: 'Archived',
+    TRANSFERRED: 'Archived',
+  };
+
+  const exams = applySqliteFindingsToCaseExams(examFindings);
+
+  return {
+    id: row.id,
+    patientId: row.patient_id,
+    caseType: caseTypeUiMap[row.case_type] || 'Comprehensive Fixed Appliance',
+    status: caseStatusUiMap[row.case_status] || 'Consultation',
+    startDate: row.start_date,
+    expectedCompletionDate: row.target_completion_date || row.start_date,
+    treatingDoctor:
+      row.primary_provider_id === 'usr-dr-albasmi'
+        ? 'Dr. Al-Basmi (Orthodontic Specialist)'
+        : row.primary_provider_id,
+    chiefComplaintEn: row.chief_complaint,
+    chiefComplaintAr:
+      row.notes || (patient?.fullNameAr ? `حالة تقويمية للمريض ${patient.fullNameAr}` : ''),
+    patientExpectations: '',
+    extraoral: exams.extraoral,
+    intraoral: exams.intraoral,
+    occlusal: exams.occlusal,
+    cbctAndRadiographs: exams.cbctAndRadiographs,
+    problemList: problems && problems.length > 0 ? problems : [],
+    diagnosis: diagnosis || createBlankDiagnosisRecord(row.start_date),
+    diagnosisHistory: [],
+    treatmentOptions: [],
+    cephRecords: [],
+    visits,
+    photos: [],
+    retentionAndResidual: createBlankRetentionRecord(),
+    financials: createBlankFinancialRecord(),
+    referencesIds: [],
+    isDemo: false, // Authoritative physical SQLite case
   };
 }
 
@@ -107,13 +457,26 @@ export default function App() {
   const [activeNav, setActiveNav] = React.useState<PrimaryNavSection>('case_workspace');
   const [activeCaseTab, setActiveCaseTab] = React.useState<CaseSubTab>('diagnosis_problems');
   const [activeOpTab, setActiveOpTab] = React.useState<
-    'p0_architecture' | 'finance' | 'inventory' | 'sync'
+    'p0_architecture' | 'p3_sandbox' | 'finance' | 'inventory' | 'sync'
   >('p0_architecture');
   const [searchQuery, setSearchQuery] = React.useState<string>('');
   const [showNewCaseModal, setShowNewCaseModal] = React.useState<boolean>(false);
+  const [caseScope, setCaseScope] = React.useState<'all' | 'clinical' | 'demo'>('all');
 
-  // Clinical SQLite Storage Integration (Phase R2-A)
-  const { cohort2PatientService, deviceInfo, status: storageStatus } = useClinicalStorage();
+  // Clinical SQLite Storage Integration (Phase R2-A, R2-B, R2-C, R2-D)
+  const {
+    cohort2PatientService,
+    cohort2CaseService,
+    cohort2VisitService,
+    cohort2ProblemDiagnosisService,
+    deviceInfo,
+    status: storageStatus,
+    mode: storageMode,
+    isDurable,
+    errorMessage: storageErrorMessage,
+    retryInitialization,
+    switchStorageMode,
+  } = useClinicalStorage();
   const [persistenceError, setPersistenceError] = React.useState<string | null>(null);
   const [isCreatingPatient, setIsCreatingPatient] = React.useState<boolean>(false);
 
@@ -157,6 +520,101 @@ export default function App() {
     }
   });
 
+  // Load authoritative orthodontic cases, visits, examinations, problems & diagnoses from SQLite upon storage readiness
+  React.useEffect(() => {
+    let isMounted = true;
+    async function loadSqliteCases() {
+      if (storageStatus === 'READY' && cohort2CaseService) {
+        try {
+          const sqliteRows = await cohort2CaseService.listActiveCases();
+          if (isMounted && sqliteRows && sqliteRows.length > 0) {
+            const mappedCases: OrthodonticCase[] = [];
+            for (const row of sqliteRows) {
+              const pat = patients.find((p) => p.id === row.patient_id);
+              let caseVisits: ClinicalVisit[] = [];
+              let examFindings: SqliteClinicalFindingRow[] | undefined = undefined;
+              if (cohort2VisitService) {
+                try {
+                  const visitRows = await cohort2VisitService.listVisitsByCaseId(row.id);
+                  caseVisits = visitRows.map((vr, idx) => mapSqliteVisitToUi(vr, idx));
+                  const exams = await cohort2VisitService.listExaminationsByCaseId(row.id);
+                  if (exams && exams.length > 0) {
+                    examFindings = await cohort2VisitService.listFindingsByExaminationId(exams[0].id);
+                  }
+                } catch {
+                  // Ignore visit/exam load failure for single case
+                }
+              }
+
+              let caseProblems: ProblemObjectiveItem[] | undefined = undefined;
+              let caseDiagnosis: DiagnosisRecord | undefined = undefined;
+              if (cohort2ProblemDiagnosisService) {
+                try {
+                  const probRows = await cohort2ProblemDiagnosisService.listProblemsByCaseId(row.id);
+                  if (probRows && probRows.length > 0) {
+                    caseProblems = probRows.map(mapSqliteProblemToUi);
+                  }
+                  const diagVersions = await cohort2ProblemDiagnosisService.listDiagnosisVersionsByCaseId(row.id);
+                  if (diagVersions && diagVersions.length > 0) {
+                    const latest = [...diagVersions].sort((a, b) => b.version_number - a.version_number)[0];
+                    const diagItems: SqliteDiagnosisItemRow[] =
+                      await cohort2ProblemDiagnosisService.listDiagnosisItemsByVersionId(latest.id);
+                    const sagItem = diagItems.find((i) => i.diagnosis_code === 'DIAG_SKELETAL_SAGITTAL');
+                    const vertItem = diagItems.find((i) => i.diagnosis_code === 'DIAG_SKELETAL_VERTICAL');
+                    const transItem = diagItems.find((i) => i.diagnosis_code === 'DIAG_SKELETAL_TRANSVERSE');
+
+                    caseDiagnosis = {
+                      version: latest.version_number,
+                      updatedAt: latest.created_at ? latest.created_at.slice(0, 10) : row.start_date,
+                      approvedBy: latest.approved_by || (latest.status === 'APPROVED' ? 'Dr. Al-Basmi' : ''),
+                      origin: 'Doctor-Approved',
+                      skeletalSagittal:
+                        (sagItem?.title as DiagnosisRecord['skeletalSagittal']) || 'Skeletal Class I',
+                      skeletalVertical:
+                        (vertItem?.title as DiagnosisRecord['skeletalVertical']) || 'Normodivergent',
+                      skeletalTransverse:
+                        (transItem?.title as DiagnosisRecord['skeletalTransverse']) ||
+                        'Normal Transverse Maxillo-Mandibular Width',
+                      dentalSummaryEn: latest.clinical_summary || '',
+                      dentalSummaryAr: latest.general_notes || latest.clinical_summary || '',
+                      occlusalSummaryEn: '',
+                      occlusalSummaryAr: '',
+                      softTissueSummaryEn: '',
+                      softTissueSummaryAr: '',
+                      comprehensiveStatementEn: latest.clinical_summary || '',
+                      comprehensiveStatementAr: latest.general_notes || latest.clinical_summary || '',
+                      differentialDiagnosis: '',
+                    };
+                  }
+                } catch {
+                  // Ignore problem/diagnosis load failure for single case
+                }
+              }
+
+              mappedCases.push(
+                mapSqliteCaseToUi(row, pat, caseVisits, caseProblems, caseDiagnosis, examFindings)
+              );
+            }
+
+            setCases((prev) => {
+              const sqliteCaseIds = new Set(mappedCases.map((c) => c.id));
+              const remainingDemoCases = prev.filter(
+                (c) => !sqliteCaseIds.has(c.id) && (c.isDemo || INITIAL_CASES.some((dc) => dc.id === c.id))
+              );
+              return [...mappedCases, ...remainingDemoCases];
+            });
+          }
+        } catch (err) {
+          console.error('Failed to load authoritative cases from SQLite:', err);
+        }
+      }
+    }
+    loadSqliteCases();
+    return () => {
+      isMounted = false;
+    };
+  }, [storageStatus, cohort2CaseService, cohort2VisitService, cohort2ProblemDiagnosisService, patients]);
+
   const [inventory, setInventory] = React.useState<InventoryMaterial[]>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEYS.INVENTORY);
@@ -187,15 +645,20 @@ export default function App() {
   const [selectedCaseId, setSelectedCaseId] = React.useState<string>(INITIAL_CASES[0].id);
 
   // New Case Modal State
+  const [newCaseMode, setNewCaseMode] = React.useState<'new_patient' | 'existing_patient'>('new_patient');
+  const [selectedExistingPatientId, setSelectedExistingPatientId] = React.useState<string>('');
+  const [newCaseType, setNewCaseType] = React.useState<string>('Comprehensive Fixed Appliance');
   const [newPatientNameAr, setNewPatientNameAr] = React.useState('');
   const [newPatientNameEn, setNewPatientNameEn] = React.useState('');
   const [newPatientDob, setNewPatientDob] = React.useState('2010-05-15');
   const [newCaseChiefComplaintEn, setNewCaseChiefComplaintEn] = React.useState('');
 
-  // Persist non-migrated clinical entities to Local Storage (Patients are authoritative in SQLite)
+  // Persist non-migrated clinical entities to Local Storage (Patients & Cases are authoritative in SQLite)
   React.useEffect(() => {
     try {
-      localStorage.setItem(STORAGE_KEYS.CASES, JSON.stringify(cases));
+      // Legacy case isolation: Only store demo cases in localStorage; physical SQLite is SSOT for clinical cases
+      const demoCasesOnly = cases.filter((c) => c.isDemo);
+      localStorage.setItem(STORAGE_KEYS.CASES, JSON.stringify(demoCasesOnly));
       localStorage.setItem(STORAGE_KEYS.INVENTORY, JSON.stringify(inventory));
       localStorage.setItem(STORAGE_KEYS.AUDIT, JSON.stringify(auditLogs));
       localStorage.setItem(STORAGE_KEYS.SYNC, JSON.stringify(syncQueue));
@@ -226,11 +689,255 @@ export default function App() {
     setAuditLogs((prev) => [newEntry, ...prev]);
   };
 
-  const handleUpdateCase = (
+  const handleUpdateCase = async (
     updated: OrthodonticCase,
     auditAction?: string,
     auditDetails?: string
   ) => {
+    // If case is an authoritative physical SQLite case, enforce SQLite persistence for problems & diagnosis
+    if (!updated.isDemo) {
+      if (storageStatus !== 'READY' || !cohort2ProblemDiagnosisService) {
+        setPersistenceError(
+          language === 'ar'
+            ? 'محرك التخزين السريري SQLite غير جاهز بعد لحفظ التعديلات السريرية.'
+            : 'SQLite clinical storage engine is not ready to record clinical modifications.'
+        );
+        return;
+      }
+
+      if (storageMode === 'CLINICAL' && !isDurable) {
+        setPersistenceError(
+          language === 'ar'
+            ? 'خطأ أمني: التخزين الدائم غير متوفر في الوضع السريري. تم منع حفظ التعديلات.'
+            : 'Security Violation: Durable persistent storage is unavailable in Clinical Mode. Clinical write blocked.'
+        );
+        return;
+      }
+
+      try {
+        const deviceId = deviceInfo?.deviceId || 'dev-browser-client';
+        const nowIso = new Date().toISOString();
+
+        // 0A. Detect updated case metadata (chief complaint / notes)
+        if (
+          cohort2CaseService &&
+          (updated.chiefComplaintEn !== activeCase.chiefComplaintEn ||
+            updated.chiefComplaintAr !== activeCase.chiefComplaintAr)
+        ) {
+          await cohort2CaseService.updateCaseMetadata({
+            caseId: updated.id,
+            chiefComplaint: updated.chiefComplaintEn || 'Orthodontic Consultation',
+            notes: updated.chiefComplaintAr || null,
+            userId: 'usr-dr-albasmi',
+            userRole: 'ORTHODONTIST',
+            deviceId,
+            timestamp: nowIso,
+          });
+          const verifiedCase = await cohort2CaseService.getCaseById(updated.id);
+          if (!verifiedCase) {
+            throw new Error(`Post-write verification failed: Case ${updated.id} not found after update.`);
+          }
+        }
+
+        // 0B. Detect updated clinical examination (extraoral, intraoral, occlusal, cbct)
+        const examChanged =
+          JSON.stringify(updated.extraoral) !== JSON.stringify(activeCase.extraoral) ||
+          JSON.stringify(updated.intraoral) !== JSON.stringify(activeCase.intraoral) ||
+          JSON.stringify(updated.occlusal) !== JSON.stringify(activeCase.occlusal) ||
+          JSON.stringify(updated.cbctAndRadiographs) !== JSON.stringify(activeCase.cbctAndRadiographs);
+
+        if (examChanged && cohort2VisitService) {
+          const examRes = await cohort2VisitService.createExamination({
+            caseId: updated.id,
+            examinationDate: nowIso.slice(0, 10),
+            examinerId: 'usr-dr-albasmi',
+            examinationStage: 'INITIAL',
+            status: 'CONFIRMED',
+            generalFindings: updated.chiefComplaintEn || 'Clinical Examination',
+            notes: updated.extraoral.notes || updated.intraoral.notes || null,
+            findings: [
+              { category: 'EXTRAORAL', findingCode: 'FACIAL_TYPE', value: updated.extraoral.facialType },
+              { category: 'EXTRAORAL', findingCode: 'FACIAL_PROFILE', value: updated.extraoral.profile },
+              { category: 'SOFT_TISSUE', findingCode: 'LIP_COMPETENCE', value: updated.extraoral.lipCompetence },
+              { category: 'SOFT_TISSUE', findingCode: 'NASOLABIAL_ANGLE', value: updated.extraoral.nasolabialAngle },
+              { category: 'ESTHETIC', findingCode: 'SMILE_ARC', value: updated.extraoral.smileArc },
+              { category: 'INTRAORAL', findingCode: 'MAX_CROWDING_MM', value: String(updated.intraoral.maxillaryCrowdingMm), unit: 'mm' },
+              { category: 'INTRAORAL', findingCode: 'MAND_CROWDING_MM', value: String(updated.intraoral.mandibularCrowdingMm), unit: 'mm' },
+              { category: 'INTRAORAL', findingCode: 'MAX_ARCH_FORM', value: updated.intraoral.maxillaryArchForm },
+              { category: 'PERIODONTAL', findingCode: 'GINGIVAL_BIOTYPE', value: updated.intraoral.gingivalBiotype },
+              { category: 'INTRAORAL', findingCode: 'ROTATIONS_SUMMARY', value: updated.intraoral.rotationsSummary || 'None' },
+              { category: 'OCCLUSAL', findingCode: 'OVERJET_INITIAL_MM', value: String(updated.occlusal.overjetInitialMm), unit: 'mm' },
+              { category: 'OCCLUSAL', findingCode: 'OVERJET_CURRENT_MM', value: String(updated.occlusal.overjetCurrentMm), unit: 'mm' },
+              { category: 'OCCLUSAL', findingCode: 'MOLAR_RIGHT', value: updated.occlusal.molarRight },
+              { category: 'OCCLUSAL', findingCode: 'CANINE_RIGHT', value: updated.occlusal.canineRight },
+              { category: 'OCCLUSAL', findingCode: 'CROSSBITE', value: updated.occlusal.crossbite },
+              { category: 'OCCLUSAL', findingCode: 'CURVE_OF_SPEE_MM', value: String(updated.occlusal.curveOfSpeeMm), unit: 'mm' },
+              { category: 'INTRAORAL', findingCode: 'BOLTON_ANTERIOR_RATIO', value: String(updated.occlusal.boltonAnteriorRatio), unit: '%' },
+              { category: 'OTHER', findingCode: 'CVM_STAGE', value: updated.cbctAndRadiographs.cvmStage },
+              { category: 'PERIODONTAL', findingCode: 'ALVEOLAR_BONE_STATUS', value: updated.cbctAndRadiographs.alveolarBoneStatus },
+              { category: 'OTHER', findingCode: 'ROOT_RESORPTION_STATUS', value: updated.cbctAndRadiographs.rootResorptionStatus },
+              { category: 'OTHER', findingCode: 'TAD_SAFE_ZONES_NOTES', value: updated.cbctAndRadiographs.tadSafeZonesNotes || 'None' },
+            ],
+            userId: 'usr-dr-albasmi',
+            userRole: 'ORTHODONTIST',
+            deviceId,
+            timestamp: nowIso,
+          });
+
+          const verifiedExam = await cohort2VisitService.getExaminationById(examRes.examination.id);
+          if (!verifiedExam) {
+            throw new Error(`Post-write verification failed: Examination ${examRes.examination.id} not found in SQLite.`);
+          }
+        }
+
+        // 1. Detect newly added problems
+        const existingProblems = activeCase.problemList || [];
+        const newProblems = (updated.problemList || []).filter(
+          (up) => !existingProblems.some((ep) => ep.id === up.id)
+        );
+
+        for (const np of newProblems) {
+          const categoryMap: Record<string, SqliteProblemRow['category']> = {
+            'Skeletal': 'SKELETAL',
+            'Dental': 'DENTAL',
+            'Soft Tissue': 'SOFT_TISSUE',
+            'Occlusal': 'OCCLUSAL',
+            'CBCT / Radiographic': 'AIRWAY',
+          };
+
+          const pRes = await cohort2ProblemDiagnosisService.createProblem({
+            id: np.id.startsWith('prob_') ? `prb-${np.id}` : np.id,
+            caseId: updated.id,
+            problemCode: `PRB-${np.domain.toUpperCase().slice(0, 3)}-${Date.now().toString().slice(-4)}`,
+            category: categoryMap[np.domain] || 'OTHER',
+            title: np.findingEn || np.findingAr || 'Orthodontic Finding',
+            description: np.findingAr || np.findingEn || null,
+            severity: np.classification === 'Actual Problem' ? 'MODERATE' : 'MILD',
+            sourceReferenceId: updated.id,
+            userId: 'usr-dr-albasmi',
+            userRole: 'ORTHODONTIST',
+            deviceId,
+            timestamp: nowIso,
+          });
+
+          // Post-write verification
+          const verified = await cohort2ProblemDiagnosisService.getProblemById(pRes.problem.id);
+          if (!verified) {
+            throw new Error(`Post-write verification failed: Problem ${pRes.problem.id} not found in SQLite.`);
+          }
+        }
+
+        // 2. Detect updated problem statuses
+        for (const up of updated.problemList || []) {
+          const ep = existingProblems.find((p) => p.id === up.id);
+          if (ep && ep.outcomeStatus !== up.outcomeStatus) {
+            const mappedStatus = up.outcomeStatus === 'Achieved' ? 'RESOLVED' : 'ACTIVE';
+            const problemId = up.id.startsWith('prob_') ? `prb-${up.id}` : up.id;
+            const pExists = await cohort2ProblemDiagnosisService.getProblemById(problemId);
+            if (pExists) {
+              await cohort2ProblemDiagnosisService.updateProblemStatus({
+                problemId,
+                targetStatus: mappedStatus,
+                userId: 'usr-dr-albasmi',
+                userRole: 'ORTHODONTIST',
+                deviceId,
+                timestamp: nowIso,
+              });
+            }
+          }
+        }
+
+        // 3. Detect updated diagnosis (any structured field or synthesis statement change)
+        const diagChanged =
+          updated.diagnosis &&
+          (updated.diagnosis.version > activeCase.diagnosis.version ||
+            updated.diagnosis.skeletalSagittal !== activeCase.diagnosis.skeletalSagittal ||
+            updated.diagnosis.skeletalVertical !== activeCase.diagnosis.skeletalVertical ||
+            updated.diagnosis.skeletalTransverse !== activeCase.diagnosis.skeletalTransverse ||
+            updated.diagnosis.comprehensiveStatementEn !== activeCase.diagnosis.comprehensiveStatementEn ||
+            updated.diagnosis.comprehensiveStatementAr !== activeCase.diagnosis.comprehensiveStatementAr);
+
+        if (diagChanged) {
+          const existingDiagVersions = await cohort2ProblemDiagnosisService.listDiagnosisVersionsByCaseId(
+            updated.id
+          );
+          const nextVerNum =
+            existingDiagVersions.length > 0
+              ? Math.max(...existingDiagVersions.map((v) => v.version_number)) + 1
+              : 1;
+          const prevLatestId =
+            existingDiagVersions.length > 0
+              ? [...existingDiagVersions].sort((a, b) => b.version_number - a.version_number)[0].id
+              : null;
+
+          const effectiveSummaryEn =
+            updated.diagnosis.comprehensiveStatementEn?.trim() ||
+            `${updated.diagnosis.skeletalSagittal} · ${updated.diagnosis.skeletalVertical} · ${updated.diagnosis.skeletalTransverse}`;
+
+          const diagResult = await cohort2ProblemDiagnosisService.createDiagnosisDraft({
+            caseId: updated.id,
+            versionNumber: nextVerNum,
+            diagnosedBy: 'usr-dr-albasmi',
+            clinicalSummary: effectiveSummaryEn,
+            generalNotes: updated.diagnosis.comprehensiveStatementAr || null,
+            supersedesVersionId: prevLatestId,
+            items: [
+              {
+                category: 'SKELETAL',
+                diagnosisCode: 'DIAG_SKELETAL_SAGITTAL',
+                title: updated.diagnosis.skeletalSagittal,
+                description: 'Skeletal Sagittal Classification',
+                severity: 'MODERATE',
+                certainty: 'CONFIRMED',
+              },
+              {
+                category: 'SKELETAL',
+                diagnosisCode: 'DIAG_SKELETAL_VERTICAL',
+                title: updated.diagnosis.skeletalVertical,
+                description: 'Skeletal Vertical Classification',
+                severity: 'MODERATE',
+                certainty: 'CONFIRMED',
+              },
+              {
+                category: 'SKELETAL',
+                diagnosisCode: 'DIAG_SKELETAL_TRANSVERSE',
+                title: updated.diagnosis.skeletalTransverse,
+                description: 'Skeletal Transverse Classification',
+                severity: 'MODERATE',
+                certainty: 'CONFIRMED',
+              },
+            ],
+            userId: 'usr-dr-albasmi',
+            userRole: 'ORTHODONTIST',
+            deviceId,
+            timestamp: nowIso,
+          });
+
+          const verifiedDiag = await cohort2ProblemDiagnosisService.getDiagnosisVersionById(
+            diagResult.diagnosisVersion.id
+          );
+          if (!verifiedDiag) {
+            throw new Error(
+              `Post-write verification failed: Diagnosis version ${diagResult.diagnosisVersion.id} not found in SQLite.`
+            );
+          }
+
+          updated = {
+            ...updated,
+            diagnosis: {
+              ...updated.diagnosis,
+              version: nextVerNum,
+            },
+          };
+        }
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        setPersistenceError(msg);
+        console.error('Clinical case update persistence failed (transaction rolled back):', err);
+        return; // Halt immediately; do not mutate in-memory state on failed write
+      }
+    }
+
     setCases((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
     if (auditAction) {
       appendAuditLog('Clinical Core', auditAction, `${updated.id}: ${auditDetails || ''}`);
@@ -250,8 +957,61 @@ export default function App() {
     }
   };
 
-  const handleAddQuickVisit = (visit: ClinicalVisit) => {
-    // 1. Add visit to case
+  const handleAddQuickVisit = async (visit: ClinicalVisit) => {
+    // If case is not a demo case, enforce SQLite persistence
+    if (!activeCase.isDemo) {
+      if (storageStatus !== 'READY' || !cohort2VisitService) {
+        setPersistenceError(
+          language === 'ar'
+            ? 'محرك التخزين السريري SQLite غير جاهز بعد لحفظ الزيارات.'
+            : 'SQLite clinical storage engine is not ready to record visits.'
+        );
+        return;
+      }
+
+      if (storageMode === 'CLINICAL' && !isDurable) {
+        setPersistenceError(
+          language === 'ar'
+            ? 'خطأ أمني: التخزين الدائم غير متوفر في الوضع السريري. تم منع حفظ الزيارة.'
+            : 'Security Violation: Durable persistent storage is unavailable in Clinical Mode. Visit write blocked.'
+        );
+        return;
+      }
+
+      try {
+        const deviceId = deviceInfo?.deviceId || 'dev-browser-client';
+        const nowIso = new Date().toISOString();
+
+        // 1. Authoritative SQLite persistence (Atomic: visits + audit_logs + sync_operations)
+        const visitResult = await cohort2VisitService.createVisit({
+          id: visit.id,
+          caseId: activeCase.id,
+          visitDate: visit.date || nowIso.slice(0, 10),
+          visitType: visit.visitType,
+          providerId: 'usr-dr-albasmi',
+          chiefReason: visit.procedures.join(', ') || visit.visitType,
+          clinicalNotes: visit.clinicalNotesEn || visit.clinicalNotesAr || null,
+          nextVisitDate: visit.nextAppointmentDate || null,
+          userId: 'usr-dr-albasmi',
+          userRole: 'ORTHODONTIST',
+          deviceId,
+          timestamp: nowIso,
+        });
+
+        // 2. Post-write verification gate
+        const verified = await cohort2VisitService.getVisitById(visitResult.visit.id);
+        if (!verified) {
+          throw new Error('Post-write verification failed: Visit was not found in SQLite after commit.');
+        }
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        setPersistenceError(msg);
+        console.error('Visit persistence failed (transaction rolled back):', err);
+        return; // Prevent optimistic UI state insertion upon persistence failure
+      }
+    }
+
+    // 1. Add visit to case presentation state
     const updatedCase: OrthodonticCase = {
       ...activeCase,
       visits: [visit, ...activeCase.visits],
@@ -271,7 +1031,7 @@ export default function App() {
     }
 
     appendAuditLog(
-      'Visits & Inventory',
+      'Visits (SQLite)',
       `Logged Visit #${visit.visitNumber} (${visit.visitType})`,
       `Case ${activeCase.id}: ${visit.procedures.join(', ')}`
     );
@@ -393,8 +1153,17 @@ export default function App() {
     if (storageStatus !== 'READY' || !cohort2PatientService) {
       setPersistenceError(
         language === 'ar'
-          ? 'قاعدة بيانات SQLite غير جاهزة بعد. يرجى الانتظار حتى اكتمال التهيئة.'
-          : 'SQLite storage engine is not ready yet. Please wait for initialization.'
+          ? 'محرك التخزين السريري SQLite غير جاهز بعد أو غير متوفر. يرجى الانتظار.'
+          : 'SQLite clinical storage engine is not ready or unavailable.'
+      );
+      return;
+    }
+
+    if (storageMode === 'CLINICAL' && !isDurable) {
+      setPersistenceError(
+        language === 'ar'
+          ? 'خطأ أمني: التخزين الدائم غير متوفر في الوضع السريري. تم منع حفظ السجل لحماية بيانات المريض.'
+          : 'Security Violation: Durable persistent storage is unavailable in Clinical Mode. Clinical write blocked.'
       );
       return;
     }
@@ -413,7 +1182,7 @@ export default function App() {
       const nowIso = new Date().toISOString();
 
       // 1. Authoritative SQLite persistence (Atomic: patients + audit_logs + sync_operations)
-      const result = await cohort2PatientService.createPatient({
+      const patientResult = await cohort2PatientService.createPatient({
         id: patientId,
         patientNumber,
         firstName,
@@ -428,25 +1197,63 @@ export default function App() {
         generalNotes: 'Initial orthodontic consultation.',
       });
 
-      // 2. Map to UI presentation only AFTER confirmed successful persistence
-      const createdUiPatient = mapSqlitePatientToUi(result.patient);
-      const newCaseId = `ORT-2026-001${cases.length + 25}`;
+      // 2. Post-write verification gate: Confirm patient exists authoritatively in SQLite
+      const verifiedPatient = await cohort2PatientService.getPatientById(patientResult.patient.id);
+      if (!verifiedPatient) {
+        throw new Error(
+          'Post-write verification failed: Patient row was not found in SQLite after commit. Case creation aborted.'
+        );
+      }
 
-      const templateCase: OrthodonticCase = {
-        ...INITIAL_CASES[0],
+      // 3. Defense-in-depth: Ensure target patient is NOT a synthetic demo patient ID
+      if (INITIAL_PATIENTS.some((dp) => dp.id === verifiedPatient.id)) {
+        throw new Error(
+          'Integrity Violation: Real clinical cases cannot be attached to synthetic demo patient IDs.'
+        );
+      }
+
+      // 4. Authoritative SQLite persistence for Orthodontic Case (Atomic: cases + audit_logs + sync_operations)
+      if (!cohort2CaseService) {
+        throw new Error('Cohort2CasePersistenceService is unavailable.');
+      }
+
+      const newCaseId = `case-${Date.now()}`;
+      const newCaseNumber = `ORT-2026-${Date.now().toString().slice(-6)}`;
+      const chiefComplaint =
+        newCaseChiefComplaintEn?.trim() || (trimmedAr ? `استشارة تقويمية - ${trimmedAr}` : 'Orthodontic Consultation');
+
+      const caseResult = await cohort2CaseService.createCase({
         id: newCaseId,
-        patientId: createdUiPatient.id,
-        status: 'Diagnosis',
+        caseNumber: newCaseNumber,
+        patientId: verifiedPatient.id,
+        caseType: 'COMPREHENSIVE',
+        caseStatus: 'CONSULTATION',
+        chiefComplaint,
         startDate: nowIso.slice(0, 10),
-        chiefComplaintEn:
-          newCaseChiefComplaintEn || 'Crowding and protrusion of upper anterior teeth.',
-        chiefComplaintAr: 'ازدحام وبروز الأسنان الأمامية العلوية.',
-        visits: [],
-      };
+        primaryProviderId: 'usr-dr-albasmi',
+        clinicId: 'clinic-main',
+        userId: 'usr-dr-albasmi',
+        userRole: 'ORTHODONTIST',
+        deviceId,
+        timestamp: nowIso,
+        notes: trimmedAr ? `حالة تقويمية للمريض ${trimmedAr}` : null,
+      });
+
+      // 5. Post-write verification gate: Confirm case exists authoritatively in SQLite
+      const verifiedCase = await cohort2CaseService.getCaseById(caseResult.case.id);
+      if (!verifiedCase) {
+        throw new Error(
+          'Post-write verification failed: Case row was not found in SQLite after commit.'
+        );
+      }
+
+      // 6. Map to UI presentation only AFTER confirmed successful persistence
+      const createdUiPatient = mapSqlitePatientToUi(patientResult.patient);
+      const createdUiCase = mapSqliteCaseToUi(verifiedCase, createdUiPatient);
 
       setPatients((prev) => [createdUiPatient, ...prev]);
-      setCases((prev) => [templateCase, ...prev]);
-      setSelectedCaseId(newCaseId);
+      setCases((prev) => [createdUiCase, ...prev]);
+      setSelectedCaseId(createdUiCase.id);
       setShowNewCaseModal(false);
       setNewPatientNameAr('');
       setNewPatientNameEn('');
@@ -454,8 +1261,8 @@ export default function App() {
       setActiveNav('case_workspace');
       setActiveCaseTab('examination');
       appendAuditLog(
-        'Patient Core (SQLite)',
-        `Created Authoritative SQLite Patient ${createdUiPatient.id} (${patientNumber})`,
+        'Case Core (SQLite)',
+        `Created Authoritative SQLite Case ${createdUiCase.id} (${newCaseNumber}) for Patient ${createdUiPatient.id}`,
         createdUiPatient.fullNameEn
       );
     } catch (err: unknown) {
@@ -468,6 +1275,8 @@ export default function App() {
   };
 
   const filteredCases = cases.filter((c) => {
+    if (caseScope === 'clinical' && c.isDemo) return false;
+    if (caseScope === 'demo' && !c.isDemo) return false;
     const pat = patients.find((p) => p.id === c.patientId);
     const q = searchQuery.toLowerCase();
     return (
@@ -484,6 +1293,53 @@ export default function App() {
       dir={language === 'ar' ? 'rtl' : 'ltr'}
       className="min-h-screen flex flex-col bg-slate-50 text-slate-900"
     >
+      {/* STORAGE DURABILITY & PREVIEW MODE ENFORCEMENT BANNERS */}
+      {storageStatus === 'UNAVAILABLE' && (
+        <div className="bg-red-600 text-white px-6 py-2.5 text-xs flex flex-wrap items-center justify-between gap-3 shadow-md z-40">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 flex-shrink-0 text-white" />
+            <span className="font-semibold">
+              {language === 'ar'
+                ? `تنبيه التخزين السريري: ${storageErrorMessage || 'التخزين الدائم (IndexedDB/OPFS) غير متاح في هذه البيئة. تم تجميد العمليات السريرية لمنع فقدان البيانات.'}`
+                : `Clinical Persistence Unavailable: ${storageErrorMessage || 'Durable storage (IndexedDB/OPFS) is not accessible. Clinical mutations are blocked to protect patient data.'}`}
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => retryInitialization()}
+              className="px-3 py-1 bg-white text-red-700 font-semibold rounded text-[11px] hover:bg-red-50 transition-colors"
+            >
+              {language === 'ar' ? 'إعادة المحاولة' : 'Retry'}
+            </button>
+            <button
+              onClick={() => switchStorageMode('PREVIEW')}
+              className="px-3 py-1 bg-red-800 text-white font-semibold rounded text-[11px] hover:bg-red-900 border border-red-500 transition-colors"
+            >
+              {language === 'ar' ? 'التحويل لوضع المعاينة المؤقت' : 'Switch to Ephemeral Demo Mode'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {storageMode === 'PREVIEW' && storageStatus === 'READY' && (
+        <div className="bg-amber-500 text-slate-950 px-6 py-1.5 text-xs font-medium flex flex-wrap items-center justify-between gap-2 z-40">
+          <div className="flex items-center gap-1.5">
+            <AlertTriangle className="w-3.5 h-3.5 text-slate-950 flex-shrink-0" />
+            <span>
+              {language === 'ar'
+                ? '⚡ وضع المعاينة التجريبي نشط: التخزين مؤقت في الذاكرة فقط (MemoryAsyncVFS). لن يتم حفظ البيانات سريرياً على القرص بشكل دائم.'
+                : '⚡ Ephemeral Demo Mode Active: In-memory storage only (MemoryAsyncVFS). Clinical writes are NOT durably saved to disk.'}
+            </span>
+          </div>
+          <button
+            onClick={() => switchStorageMode('CLINICAL')}
+            className="px-2.5 py-0.5 bg-slate-900 text-white text-[11px] font-semibold rounded hover:bg-slate-800 transition-colors"
+          >
+            {language === 'ar' ? 'العودة للوضع السريري الدائم' : 'Switch to Durable Clinical Mode'}
+          </button>
+        </div>
+      )}
+
       {/* STRICT 3-ZONE TOP BAR CONTRACT */}
       <header className="no-print sticky top-0 z-30 flex items-center justify-between px-6 py-3.5 bg-white border-b border-slate-200">
         {/* Zone 1: Single Text Wordmark */}
@@ -614,6 +1470,43 @@ export default function App() {
                   className="w-full pl-8 pr-3 py-1.5 text-xs border border-slate-300 rounded-lg focus:outline-none focus:border-blue-600"
                 />
               </div>
+
+              {/* Case Scope Filter */}
+              <div className="flex rounded-lg p-0.5 bg-slate-100 border border-slate-200 text-[10px] font-medium">
+                <button
+                  type="button"
+                  onClick={() => setCaseScope('all')}
+                  className={`flex-1 py-1 rounded transition-colors text-center ${
+                    caseScope === 'all'
+                      ? 'bg-white text-slate-900 font-semibold shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  {language === 'ar' ? 'الكل' : 'All'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCaseScope('clinical')}
+                  className={`flex-1 py-1 rounded transition-colors text-center ${
+                    caseScope === 'clinical'
+                      ? 'bg-emerald-600 text-white font-semibold shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  {language === 'ar' ? 'سريري (SQLite)' : 'Clinical'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCaseScope('demo')}
+                  className={`flex-1 py-1 rounded transition-colors text-center ${
+                    caseScope === 'demo'
+                      ? 'bg-amber-600 text-white font-semibold shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  {language === 'ar' ? 'تجريبي (Demo)' : 'Demo'}
+                </button>
+              </div>
             </div>
 
             {/* Case List */}
@@ -621,6 +1514,7 @@ export default function App() {
               {filteredCases.map((c) => {
                 const pat = patients.find((p) => p.id === c.patientId);
                 const isSelected = c.id === activeCase.id;
+                const isCaseDemo = c.isDemo || pat?.isDemo;
                 return (
                   <button
                     key={c.id}
@@ -632,9 +1526,20 @@ export default function App() {
                     }`}
                   >
                     <div className="flex items-center justify-between text-[11px]">
-                      <span className={`font-mono ${isSelected ? 'text-cyan-400 font-semibold' : 'text-blue-700 font-semibold'}`}>
-                        {c.id}
-                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <span className={`font-mono ${isSelected ? 'text-cyan-400 font-semibold' : 'text-blue-700 font-semibold'}`}>
+                          {c.id}
+                        </span>
+                        {isCaseDemo ? (
+                          <span className="px-1 py-0.2 rounded text-[9px] font-semibold bg-amber-100 text-amber-800 border border-amber-300">
+                            DEMO
+                          </span>
+                        ) : (
+                          <span className="px-1 py-0.2 rounded text-[9px] font-semibold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                            SQLITE
+                          </span>
+                        )}
+                      </div>
                       <span className={isSelected ? 'text-slate-300' : 'text-slate-500'}>
                         {formatCaseStatus(language, c.status)}
                       </span>
@@ -764,9 +1669,20 @@ export default function App() {
                     : `Started: ${activeCase.startDate}`}
                 </span>
               </div>
-              <h1 className="text-lg font-bold text-slate-900">
-                {language === 'ar' ? activePatient.fullNameAr : activePatient.fullNameEn}
-              </h1>
+              <div className="flex items-center gap-2.5">
+                <h1 className="text-lg font-bold text-slate-900">
+                  {language === 'ar' ? activePatient.fullNameAr : activePatient.fullNameEn}
+                </h1>
+                {activeCase.isDemo || activePatient.isDemo ? (
+                  <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-amber-100 text-amber-800 border border-amber-300">
+                    {language === 'ar' ? 'حالة تجريبية ما قبل سريرية (Demo)' : 'Pre-Clinical Demo Case'}
+                  </span>
+                ) : (
+                  <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                    {language === 'ar' ? 'سجل سريري معتمد (SQLite)' : 'Clinical Record (SQLite)'}
+                  </span>
+                )}
+              </div>
             </div>
 
             {/* Quick Workflow Navigation Shortcuts */}
@@ -944,12 +1860,9 @@ export default function App() {
             </div>
           )}
 
-          {/* VIEW 2: CLINICAL & CEPHALOMETRIC WORKSPACE */}
+          {/* VIEW 2: CLINICAL & CEPHALOMETRIC WORKSPACE (Unified SQLite-Backed Workspace) */}
           {activeNav === 'case_workspace' && (
             <div className="space-y-5">
-              {/* P3-A + P3-B + P3-C Authoritative Unified Clinical Core Workspace */}
-              <P3ClinicalCoreWorkspace language={language} isOnline={isOnline} />
-
               {/* Sub-navigation Tabs for the 6 Core Clinical Domains */}
               <div className="no-print flex flex-wrap gap-1.5 bg-slate-200/70 p-1.5 rounded-lg">
                 {(
@@ -1052,6 +1965,18 @@ export default function App() {
                     : 'P0 Domain Architecture & Versioning'}
                 </button>
                 <button
+                  onClick={() => setActiveOpTab('p3_sandbox')}
+                  className={`px-3.5 py-1.5 rounded-md text-xs font-semibold ${
+                    activeOpTab === 'p3_sandbox'
+                      ? 'bg-white text-slate-900 shadow-xs'
+                      : 'text-slate-600'
+                  }`}
+                >
+                  {language === 'ar'
+                    ? 'مختبر عقود النطاق السريري (P3 Sandbox)'
+                    : 'P3 Domain Contract Sandbox'}
+                </button>
+                <button
                   onClick={() => setActiveOpTab('finance')}
                   className={`px-3.5 py-1.5 rounded-md text-xs font-semibold ${
                     activeOpTab === 'finance'
@@ -1087,23 +2012,27 @@ export default function App() {
                 </button>
               </div>
 
-              <OperationalAndSyncView
-                activeSubTab={activeOpTab}
-                orthoCase={activeCase}
-                patient={activePatient}
-                allPatients={patients}
-                allCases={cases}
-                inventory={inventory}
-                auditLogs={auditLogs}
-                syncQueue={syncQueue}
-                isOnline={isOnline}
-                language={language}
-                onRecordPayment={handleRecordPayment}
-                onRestockMaterial={handleRestockMaterial}
-                onResolveConflict={handleResolveConflict}
-                onSyncAllPending={handleSyncAllPending}
-                onExportBackupJson={handleExportBackupJson}
-              />
+              {activeOpTab === 'p3_sandbox' ? (
+                <P3ClinicalCoreWorkspace language={language} isOnline={isOnline} />
+              ) : (
+                <OperationalAndSyncView
+                  activeSubTab={activeOpTab}
+                  orthoCase={activeCase}
+                  patient={activePatient}
+                  allPatients={patients}
+                  allCases={cases}
+                  inventory={inventory}
+                  auditLogs={auditLogs}
+                  syncQueue={syncQueue}
+                  isOnline={isOnline}
+                  language={language}
+                  onRecordPayment={handleRecordPayment}
+                  onRestockMaterial={handleRestockMaterial}
+                  onResolveConflict={handleResolveConflict}
+                  onSyncAllPending={handleSyncAllPending}
+                  onExportBackupJson={handleExportBackupJson}
+                />
+              )}
             </div>
           )}
         </main>
@@ -1132,6 +2061,16 @@ export default function App() {
                 <span className="font-mono text-[11px]">{persistenceError}</span>
               </div>
             )}
+            <div className="p-2.5 bg-blue-50 border border-blue-200 text-blue-900 rounded text-xs flex items-center justify-between">
+              <span className="font-semibold">
+                {language === 'ar' ? 'مسار الحفظ السريري:' : 'Persistence Engine:'}
+              </span>
+              <span className="font-mono text-[11px] font-medium text-blue-800">
+                {storageMode === 'CLINICAL'
+                  ? (language === 'ar' ? 'SQLite دائم (معتمد سريرياً)' : 'SQLite Durable (Clinical Canonical)')
+                  : (language === 'ar' ? 'وضع المعاينة المؤقت (ذاكرة فقط)' : 'Ephemeral Preview (RAM Only)')}
+              </span>
+            </div>
             <form onSubmit={handleCreateNewCase} className="space-y-3 text-xs">
               <div>
                 <label className="font-semibold text-slate-700 block mb-1">

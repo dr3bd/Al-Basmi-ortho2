@@ -372,7 +372,7 @@ export function runClinicalConsistencyAndQualityChecks(orthoCase: OrthodonticCas
 
   // 4. Check Selected Treatment Option
   const selectedOptions = orthoCase.treatmentOptions.filter((o) => o.isSelected);
-  if (selectedOptions.length === 0) {
+  if (orthoCase.treatmentOptions.length > 0 && selectedOptions.length === 0) {
     warnings.push({
       id: 'warn_no_selected_plan',
       type: 'Report Quality Gap',

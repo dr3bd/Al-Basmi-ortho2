@@ -555,6 +555,7 @@ export const INITIAL_CASES: OrthodonticCase[] = [
       ],
     },
     referencesIds: ['ref_proffit_6ed', 'ref_steiner_1953', 'ref_mcnamara_1984', 'ref_tweed_1954', 'ref_little_stability_1988'],
+    isDemo: true,
   },
   {
     id: 'ORT-2026-00118',
@@ -828,6 +829,7 @@ export const INITIAL_CASES: OrthodonticCase[] = [
       ],
     },
     referencesIds: ['ref_carlson_marpe_2016', 'ref_mcnamara_1984', 'ref_proffit_6ed'],
+    isDemo: true,
   },
 ];
 
