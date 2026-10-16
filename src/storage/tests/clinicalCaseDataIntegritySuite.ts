@@ -122,6 +122,10 @@ export async function runUX1DataIntegritySuite(
     gender: 'Male',
     dob: '2008-03-12',
     phone: '+966501112233',
+    medicalHistory: 'Non-contributory',
+    dentalHistory: 'Routine checkups',
+    allergies: 'None',
+    notes: '',
     createdAt: '2026-10-13',
     isDemo: false,
   };

@@ -139,7 +139,7 @@ export async function runDbFoundationRemediationSuite(options?: {
         await tx.execute(
           `INSERT INTO cephalometric_analysis_definitions (analysis_code, name_en, name_ar, version, active)
            VALUES (?, ?, ?, ?, ?);`,
-          ['DBF_ANALYSIS_1', 'Test Analysis 1', 'تحليل تجريبي 1', 1, false]
+          ['DBF_ANALYSIS_1', 'Test Analysis 1', 'تحليل تجريبي 1', 1, 0]
         );
 
         try {
@@ -282,7 +282,7 @@ export async function runDbFoundationRemediationSuite(options?: {
         sourceReferenceId: examRes.examination.id,
         evidence: [
           {
-            evidenceType: 'MEASUREMENT',
+            evidenceType: 'ARCH_MEASUREMENT',
             sourceEntityType: 'clinical_examinations',
             sourceEntityId: examRes.examination.id,
             measurementValue: '5.5',

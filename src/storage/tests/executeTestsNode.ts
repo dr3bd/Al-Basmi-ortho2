@@ -8,6 +8,7 @@ import { runCohort2VisitForensicSuite } from './cohort2VisitForensicSuite.ts';
 import { runCohort2ProblemDiagnosisForensicSuite } from './cohort2ProblemDiagnosisForensicSuite.ts';
 import { runUX1DataIntegritySuite } from './clinicalCaseDataIntegritySuite.ts';
 import { runDbFoundationRemediationSuite } from './dbFoundationRemediationSuite.ts';
+import { runSqliteBackupRestoreSuite } from './sqliteBackupRestoreSuite.ts';
 
 // Intercept internal wa-sqlite Emscripten asyncify microtask unwinding during cross-suite module reload
 process.on('unhandledRejection', (reason: any) => {
@@ -139,6 +140,17 @@ async function main() {
     console.log(`       Evidence: ${r.evidence}`);
   }
 
+  // 9. SQLite Backup & Restore Verification Suite (Phase 0-R-GATE-1)
+  console.log('\n=== STARTING SQLITE BACKUP & RESTORE VERIFICATION SUITE (GATE-1) ===');
+  const bkReport = await runSqliteBackupRestoreSuite({ wasmBinary });
+  console.log(
+    `SQLITE BACKUP/RESTORE Total: ${bkReport.total}, Passed: ${bkReport.passed}, Failed: ${bkReport.failed}`
+  );
+  for (const r of bkReport.results) {
+    console.log(`[${r.passed ? 'PASS' : 'FAIL'}] ${r.testId} - ${r.name}`);
+    console.log(`       Evidence: ${r.evidence}`);
+  }
+
   const anyFailures =
     report.failedGates > 0 ||
     c1Report.total - c1Report.passed > 0 ||
@@ -147,7 +159,8 @@ async function main() {
     c2VisitReport.failed > 0 ||
     c2ProbDiagReport.failed > 0 ||
     ux1Report.failed > 0 ||
-    dbfReport.failed > 0;
+    dbfReport.failed > 0 ||
+    bkReport.failed > 0;
   if (anyFailures) {
     console.error('\nOne or more test suites failed.');
     process.exit(1);

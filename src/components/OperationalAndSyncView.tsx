@@ -62,8 +62,8 @@ import { executeP2EtoP2JUnifiedForensicBatch } from '../domain/p2jDomainFreezeSu
 
 interface OperationalAndSyncViewProps {
   activeSubTab: 'finance' | 'inventory' | 'sync' | 'p0_architecture';
-  orthoCase: OrthodonticCase;
-  patient: Patient;
+  orthoCase?: OrthodonticCase;
+  patient?: Patient;
   allPatients: Patient[];
   allCases: OrthodonticCase[];
   inventory: InventoryMaterial[];
@@ -147,16 +147,23 @@ export const OperationalAndSyncView: React.FC<OperationalAndSyncViewProps> = ({
   const [showSqliteDdl, setShowSqliteDdl] = React.useState<boolean>(false);
 
   // Calculate direct material cost from all visits in active case
-  const directMaterialCost = orthoCase.visits.reduce((acc, v) => {
-    const visitSum = v.materialsIssuedIds.reduce((s, m) => s + m.quantity * m.unitCost, 0);
-    return acc + visitSum;
-  }, 0);
-
-  const netFee = orthoCase.financials.totalFee - orthoCase.financials.discount;
-  const totalPaid = orthoCase.financials.installments.reduce((s, i) => s + i.paidAmount, 0);
+  const directMaterialCost = orthoCase?.visits
+    ? orthoCase.visits.reduce((acc, v) => {
+        const visitSum = v.materialsIssuedIds.reduce((s, m) => s + m.quantity * m.unitCost, 0);
+        return acc + visitSum;
+      }, 0)
+    : 0;
+  const netFee = orthoCase?.financials
+    ? orthoCase.financials.totalFee - orthoCase.financials.discount
+    : 0;
+  const totalPaid = orthoCase?.financials
+    ? orthoCase.financials.installments.reduce((s, i) => s + i.paidAmount, 0)
+    : 0;
   const remainingBalance = netFee - totalPaid;
   const totalDirectCosts =
-    directMaterialCost + orthoCase.financials.labCost + orthoCase.financials.otherDirectCost;
+    directMaterialCost +
+    (orthoCase?.financials?.labCost ?? 0) +
+    (orthoCase?.financials?.otherDirectCost ?? 0);
   const estimatedContribution = netFee - totalDirectCosts;
 
   const formatCategory = (cat: string) => {
@@ -1930,6 +1937,23 @@ export const OperationalAndSyncView: React.FC<OperationalAndSyncViewProps> = ({
   }
 
   if (activeSubTab === 'finance') {
+    if (!orthoCase || !patient || orthoCase.patientId !== patient.id) {
+      return (
+        <div className="bg-white rounded-xl border border-slate-200 p-8 text-center space-y-3">
+          <div className="w-12 h-12 bg-amber-100 text-amber-700 rounded-full flex items-center justify-center mx-auto">
+            <AlertTriangle className="w-6 h-6" />
+          </div>
+          <h3 className="text-base font-bold text-slate-800">
+            {language === 'ar' ? 'لم يتم تحديد حالة لإدارة المالية' : 'No Active Case Selected for Financial Management'}
+          </h3>
+          <p className="text-xs text-slate-500 max-w-md mx-auto">
+            {language === 'ar'
+              ? 'يرجى اختيار حالة تقويمية محددة تابعة للمريض النشط لعرض وإدارة الأقساط والمصروفات.'
+              : 'Please select an active orthodontic case belonging to the active patient to manage financials and payments.'}
+          </p>
+        </div>
+      );
+    }
     return (
       <div className="space-y-6">
         <div className="bg-white border border-slate-200 rounded-lg p-5 space-y-4">

@@ -315,22 +315,205 @@ export class WaSqliteStorageAdapter implements ISqliteStorageAdapter {
   public async exportDatabaseBinary(): Promise<Uint8Array> {
     this.assertConnected();
     const release = await this._mutex.acquire();
+    const tempExportFile = `backup_export_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.db`;
     try {
-      const tables = await this.internalQuery<{ name: string }>(
-        "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name ASC;"
-      );
-      const snapshot: Record<string, unknown[]> = {};
-      for (const t of tables) {
-        snapshot[t.name] = await this.internalQuery(`SELECT * FROM "${t.name}";`);
+      // 1. Checkpoint WAL and ensure all pending changes are flushed
+      await this.internalExecute('PRAGMA wal_checkpoint(FULL);');
+
+      // 2. Perform native SQLite VACUUM INTO to produce an atomic, defragmented SQLite 3 database file
+      await this.internalExecute(`VACUUM INTO '${tempExportFile}';`);
+
+      // 3. Read raw SQLite binary bytes from VFS
+      const bytes = await this.readVfsFileBytes(tempExportFile);
+
+      // 4. Validate header of exported database
+      if (!this.isValidSqliteHeader(bytes)) {
+        throw new SqliteStorageError(
+          'ERR_SQLITE_CORRUPT_DATABASE',
+          'Exported database does not match SQLite format 3 specification'
+        );
       }
-      const json = JSON.stringify({
-        format: 'ALBASMI_SQLITE_PHYSICAL_SNAPSHOT_v1',
-        databaseName: this._databaseName,
-        driverId: this._driverId,
-        exportedAt: new Date().toISOString(),
-        tables: snapshot,
-      });
-      return new TextEncoder().encode(json);
+
+      return bytes;
+    } finally {
+      // Always cleanup temporary export file
+      await this.deleteVfsFile(tempExportFile);
+      release();
+    }
+  }
+
+  public async restoreDatabaseBinary(backupBytes: Uint8Array): Promise<void> {
+    this.assertConnected();
+
+    // 1. Validate SQLite 3 magic header and size
+    if (!backupBytes || backupBytes.byteLength < 512) {
+      throw new SqliteStorageError(
+        'ERR_SQLITE_CORRUPT_DATABASE',
+        'Backup payload is too small to be a valid SQLite database (minimum 512 bytes required).'
+      );
+    }
+
+    if (!this.isValidSqliteHeader(backupBytes)) {
+      throw new SqliteStorageError(
+        'ERR_SQLITE_CORRUPT_DATABASE',
+        'Backup payload is not a valid SQLite database (missing SQLite format 3 magic header).'
+      );
+    }
+
+    const release = await this._mutex.acquire();
+    try {
+      // 2. Prevent restore during active transaction
+      if (this._activeTransactionDepth > 0) {
+        throw new SqliteStorageError(
+          'ERR_SQLITE_TRANSACTION_ROLLBACK',
+          'Cannot restore database while a transaction is active.'
+        );
+      }
+
+      // 3. Isolated Pre-restoration Verification in Temporary Database
+      // The live database is NOT modified during this phase.
+      const verifyTempDb = `temp_verify_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.db`;
+      try {
+        await this.writeVfsFileBytes(verifyTempDb, backupBytes);
+
+        let verifyHandle: any = null;
+        try {
+          verifyHandle = await this._sqlite3.open_v2(verifyTempDb);
+        } catch (openErr: unknown) {
+          throw new SqliteStorageError(
+            'ERR_SQLITE_CORRUPT_DATABASE',
+            `Failed to open backup database in verification sandbox: ${openErr instanceof Error ? openErr.message : String(openErr)}`,
+            undefined,
+            undefined,
+            openErr
+          );
+        }
+
+        try {
+          // A. Integrity check
+          const integrityRows: string[] = [];
+          try {
+            await this.execOnHandle(verifyHandle, 'PRAGMA integrity_check;', (row) => {
+              if (row && row[0]) integrityRows.push(String(row[0]));
+            });
+          } catch (integrityErr) {
+            throw new SqliteStorageError(
+              'ERR_SQLITE_CORRUPT_DATABASE',
+              `Backup integrity check failed: ${integrityErr instanceof Error ? integrityErr.message : String(integrityErr)}`,
+              undefined,
+              undefined,
+              integrityErr
+            );
+          }
+          if (integrityRows.length === 0 || integrityRows[0] !== 'ok') {
+            throw new SqliteStorageError(
+              'ERR_SQLITE_CORRUPT_DATABASE',
+              `Backup integrity check failed: ${integrityRows.join(', ')}`
+            );
+          }
+
+          // B. Foreign Key check
+          const fkRows: unknown[] = [];
+          await this.execOnHandle(verifyHandle, 'PRAGMA foreign_key_check;', (row) => {
+            fkRows.push(row);
+          });
+          if (fkRows.length > 0) {
+            throw new SqliteStorageError(
+              'ERR_SQLITE_FOREIGN_KEY_VIOLATION',
+              `Backup contains ${fkRows.length} foreign key violation(s).`
+            );
+          }
+
+          // C. Schema compatibility check
+          const tableRows: string[] = [];
+          await this.execOnHandle(
+            verifyHandle,
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%';",
+            (row) => {
+              if (row && row[0]) tableRows.push(String(row[0]));
+            }
+          );
+
+          if (tableRows.length === 0) {
+            throw new SqliteStorageError(
+              'ERR_SQLITE_SCHEMA_MISMATCH',
+              'Backup database is empty (no tables found).'
+            );
+          }
+
+          // Must contain essential orthodontic platform tables
+          const requiredTables = ['patients', 'orthodontic_cases', 'clinical_examinations', 'audit_logs', 'sync_operations'];
+          const missingTables = requiredTables.filter((t) => !tableRows.includes(t));
+          if (missingTables.length > 0) {
+            throw new SqliteStorageError(
+              'ERR_SQLITE_SCHEMA_MISMATCH',
+              `Backup database schema is incompatible with clinical platform; missing required tables: ${missingTables.join(', ')}`
+            );
+          }
+        } finally {
+          if (verifyHandle) {
+            await this._sqlite3.close(verifyHandle);
+          }
+        }
+      } finally {
+        await this.deleteVfsFile(verifyTempDb);
+      }
+
+      // 4. Backup is 100% verified. Proceed to fail-safe live restoration with automatic rollback.
+      let liveRollbackBytes: Uint8Array | null = null;
+      try {
+        await this.internalExecute('PRAGMA wal_checkpoint(FULL);');
+        liveRollbackBytes = await this.readVfsFileBytes(this._databaseName);
+      } catch (readLiveErr) {
+        console.warn('Could not take live pre-restore rollback snapshot:', readLiveErr);
+      }
+
+      // Close live handle
+      if (this._dbHandle) {
+        await this._sqlite3.close(this._dbHandle);
+        this._dbHandle = null;
+      }
+
+      // Clean up stale journal/wal/shm files if present
+      await this.deleteVfsFile(`${this._databaseName}-wal`);
+      await this.deleteVfsFile(`${this._databaseName}-journal`);
+      await this.deleteVfsFile(`${this._databaseName}-shm`);
+
+      // Overwrite live file in VFS with verified backup
+      await this.writeVfsFileBytes(this._databaseName, backupBytes);
+
+      // Reopen live connection
+      try {
+        this._dbHandle = await this._sqlite3.open_v2(this._databaseName);
+        await this.internalExecute('PRAGMA foreign_keys = ON;');
+        const checkRows = await this.internalQuery<{ integrity: string }>('PRAGMA integrity_check;');
+        if (checkRows.length === 0 || Object.values(checkRows[0])[0] !== 'ok') {
+          throw new Error('Integrity check failed on reopened live database');
+        }
+      } catch (reopenErr: unknown) {
+        console.error('Failed to reopen restored database, rolling back:', reopenErr);
+        // Automatic rollback to previous live state
+        if (liveRollbackBytes) {
+          try {
+            if (this._dbHandle) {
+              await this._sqlite3.close(this._dbHandle);
+              this._dbHandle = null;
+            }
+            await this.writeVfsFileBytes(this._databaseName, liveRollbackBytes);
+            this._dbHandle = await this._sqlite3.open_v2(this._databaseName);
+            await this.internalExecute('PRAGMA foreign_keys = ON;');
+          } catch (rollbackErr) {
+            console.error('Fatal rollback error:', rollbackErr);
+          }
+        }
+        throw new SqliteStorageError(
+          'ERR_SQLITE_INITIALIZATION_FAILED',
+          `Restoration failed during live database reactivation; previous database state was restored. Error: ${reopenErr instanceof Error ? reopenErr.message : String(reopenErr)}`,
+          undefined,
+          undefined,
+          reopenErr
+        );
+      }
     } finally {
       release();
     }
@@ -533,5 +716,217 @@ export class WaSqliteStorageAdapter implements ISqliteStorageAdapter {
       'ERR_PERSISTENCE_UNAVAILABLE',
       'No persistent browser storage (OPFS or IndexedDB) is accessible in this runtime.'
     );
+  }
+
+  private isValidSqliteHeader(bytes: Uint8Array): boolean {
+    if (!bytes || bytes.byteLength < 16) return false;
+    // Magic header: "SQLite format 3\0"
+    const expected = [0x53, 0x51, 0x4c, 0x69, 0x74, 0x65, 0x20, 0x66, 0x6f, 0x72, 0x6d, 0x61, 0x74, 0x20, 0x33, 0x00];
+    for (let i = 0; i < 16; i++) {
+      if (bytes[i] !== expected[i]) return false;
+    }
+    return true;
+  }
+
+  private async execOnHandle(
+    handle: any,
+    sql: string,
+    callback?: (row: unknown[], colNames: string[]) => void
+  ): Promise<void> {
+    for await (const stmt of this._sqlite3.statements(handle, sql)) {
+      const colNames: string[] = this._sqlite3.column_names(stmt);
+      while ((await this._sqlite3.step(stmt)) === SQLite.SQLITE_ROW) {
+        if (callback) {
+          const rowValues: unknown[] = [];
+          for (let i = 0; i < colNames.length; i++) {
+            rowValues.push(this._sqlite3.column(stmt, i));
+          }
+          callback(rowValues, colNames);
+        }
+      }
+    }
+  }
+
+  private async readVfsFileBytes(filename: string): Promise<Uint8Array> {
+    if (this._driverId === 'MEMORY_ASYNC') {
+      const file = this._vfs?.mapNameToFile?.get(filename);
+      if (!file) {
+        throw new SqliteStorageError('ERR_SQLITE_CORRUPT_DATABASE', `File ${filename} not found in memory VFS`);
+      }
+      return new Uint8Array(file.data.slice(0, file.size));
+    }
+
+    if (this._driverId === 'OPFS') {
+      if (typeof navigator !== 'undefined' && navigator.storage?.getDirectory) {
+        const root = await navigator.storage.getDirectory();
+        const fh = await root.getFileHandle(filename, { create: false });
+        const file = await fh.getFile();
+        const buf = await file.arrayBuffer();
+        return new Uint8Array(buf);
+      }
+      throw new SqliteStorageError('ERR_PERSISTENCE_UNAVAILABLE', 'OPFS not accessible in current environment');
+    }
+
+    if (this._driverId === 'INDEXEDDB') {
+      const idbName = this._vfs?.name || `albasmi_idb_${this._databaseName}`;
+      return new Promise((resolve, reject) => {
+        if (typeof indexedDB === 'undefined') {
+          return reject(new SqliteStorageError('ERR_PERSISTENCE_UNAVAILABLE', 'IndexedDB is not available'));
+        }
+        const req = indexedDB.open(idbName);
+        req.onerror = () => reject(new SqliteStorageError('ERR_SQLITE_CORRUPT_DATABASE', `Failed to open IndexedDB ${idbName}`));
+        req.onsuccess = () => {
+          const db = req.result;
+          try {
+            const tx = db.transaction('blocks', 'readonly');
+            const store = tx.objectStore('blocks');
+            const path = filename.startsWith('/') ? filename : `/${filename}`;
+            const getAllReq = store.getAll(IDBKeyRange.bound([path, -Infinity, -Infinity], [path, Infinity, Infinity]));
+            getAllReq.onsuccess = () => {
+              const blocks: Array<{ offset: number; version: number; data: Uint8Array; fileSize?: number }> = getAllReq.result || [];
+              db.close();
+              if (blocks.length === 0) {
+                return reject(new SqliteStorageError('ERR_SQLITE_CORRUPT_DATABASE', `File ${filename} not found in IndexedDB blocks`));
+              }
+              const block0 = blocks.find((b) => b.offset === 0);
+              if (!block0 || typeof block0.fileSize !== 'number') {
+                return reject(new SqliteStorageError('ERR_SQLITE_CORRUPT_DATABASE', `Invalid block0 for ${filename} in IndexedDB`));
+              }
+              const totalSize = block0.fileSize;
+              const result = new Uint8Array(totalSize);
+              if (block0.data) {
+                result.set(block0.data.subarray(0, Math.min(block0.data.byteLength, totalSize)), 0);
+              }
+              for (const b of blocks) {
+                if (b.offset < 0) {
+                  const fileOffset = -b.offset;
+                  if (fileOffset < totalSize && b.data) {
+                    result.set(b.data.subarray(0, Math.min(b.data.byteLength, totalSize - fileOffset)), fileOffset);
+                  }
+                }
+              }
+              resolve(result);
+            };
+            getAllReq.onerror = () => {
+              db.close();
+              reject(new SqliteStorageError('ERR_SQLITE_CORRUPT_DATABASE', `IndexedDB query failed for ${filename}`));
+            };
+          } catch (e) {
+            db.close();
+            reject(new SqliteStorageError('ERR_SQLITE_CORRUPT_DATABASE', `IndexedDB error: ${e}`));
+          }
+        };
+      });
+    }
+
+    throw new SqliteStorageError('ERR_PERSISTENCE_UNAVAILABLE', `VFS ${this._driverId} does not support binary export`);
+  }
+
+  private async writeVfsFileBytes(filename: string, bytes: Uint8Array): Promise<void> {
+    if (this._driverId === 'MEMORY_ASYNC') {
+      if (this._vfs?.mapNameToFile) {
+        this._vfs.mapNameToFile.set(filename, {
+          name: filename,
+          flags: 0,
+          size: bytes.byteLength,
+          data: bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
+        });
+        return;
+      }
+      throw new SqliteStorageError('ERR_SQLITE_INITIALIZATION_FAILED', 'Memory VFS not accessible');
+    }
+
+    if (this._driverId === 'OPFS') {
+      if (typeof navigator !== 'undefined' && navigator.storage?.getDirectory) {
+        const root = await navigator.storage.getDirectory();
+        const fh = await root.getFileHandle(filename, { create: true });
+        const writable = await fh.createWritable();
+        await (writable as any).write(bytes);
+        await writable.close();
+        return;
+      }
+      throw new SqliteStorageError('ERR_PERSISTENCE_UNAVAILABLE', 'OPFS not accessible');
+    }
+
+    if (this._driverId === 'INDEXEDDB') {
+      const idbName = this._vfs?.name || `albasmi_idb_${this._databaseName}`;
+      return new Promise((resolve, reject) => {
+        if (typeof indexedDB === 'undefined') {
+          return reject(new SqliteStorageError('ERR_PERSISTENCE_UNAVAILABLE', 'IndexedDB not available'));
+        }
+        const req = indexedDB.open(idbName);
+        req.onerror = () => reject(new SqliteStorageError('ERR_SQLITE_INITIALIZATION_FAILED', `Failed to open IDB ${idbName}`));
+        req.onsuccess = () => {
+          const db = req.result;
+          try {
+            const tx = db.transaction('blocks', 'readwrite');
+            const store = tx.objectStore('blocks');
+            const path = filename.startsWith('/') ? filename : `/${filename}`;
+            store.delete(IDBKeyRange.bound([path, -Infinity, -Infinity], [path, Infinity, Infinity]));
+            store.put({
+              path,
+              offset: 0,
+              version: 1,
+              data: bytes.slice(),
+              fileSize: bytes.byteLength,
+            });
+            tx.oncomplete = () => {
+              db.close();
+              resolve();
+            };
+            tx.onerror = () => {
+              db.close();
+              reject(new SqliteStorageError('ERR_SQLITE_INITIALIZATION_FAILED', 'Failed to write blocks to IDB'));
+            };
+          } catch (e) {
+            db.close();
+            reject(new SqliteStorageError('ERR_SQLITE_INITIALIZATION_FAILED', `IDB write error: ${e}`));
+          }
+        };
+      });
+    }
+
+    throw new SqliteStorageError('ERR_PERSISTENCE_UNAVAILABLE', `VFS ${this._driverId} does not support binary write`);
+  }
+
+  private async deleteVfsFile(filename: string): Promise<void> {
+    try {
+      if (this._driverId === 'MEMORY_ASYNC') {
+        this._vfs?.mapNameToFile?.delete(filename);
+        return;
+      }
+      if (this._driverId === 'OPFS') {
+        if (typeof navigator !== 'undefined' && navigator.storage?.getDirectory) {
+          const root = await navigator.storage.getDirectory();
+          await root.removeEntry(filename);
+        }
+        return;
+      }
+      if (this._driverId === 'INDEXEDDB') {
+        const idbName = this._vfs?.name || `albasmi_idb_${this._databaseName}`;
+        if (typeof indexedDB !== 'undefined') {
+          await new Promise<void>((resolve, reject) => {
+            const req = indexedDB.open(idbName);
+            req.onerror = () => reject();
+            req.onsuccess = () => {
+              const db = req.result;
+              try {
+                const tx = db.transaction('blocks', 'readwrite');
+                const store = tx.objectStore('blocks');
+                const path = filename.startsWith('/') ? filename : `/${filename}`;
+                store.delete(IDBKeyRange.bound([path, -Infinity, -Infinity], [path, Infinity, Infinity]));
+                tx.oncomplete = () => { db.close(); resolve(); };
+                tx.onerror = () => { db.close(); reject(); };
+              } catch {
+                db.close();
+                reject();
+              }
+            };
+          });
+        }
+      }
+    } catch {
+      // Ignore deletion failure for temporary files
+    }
   }
 }

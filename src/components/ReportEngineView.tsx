@@ -44,8 +44,8 @@ export type ReportTemplatePreset =
   | 'Scientific Conference Presentation';
 
 interface ReportEngineViewProps {
-  orthoCase: OrthodonticCase;
-  patient: Patient;
+  orthoCase?: OrthodonticCase;
+  patient?: Patient;
   warnings: ClinicalWarning[];
   references: ScientificReference[];
   language: LanguageMode;
@@ -92,6 +92,24 @@ export const ReportEngineView: React.FC<ReportEngineViewProps> = ({
   const [anonymizeForConference, setAnonymizeForConference] = React.useState<boolean>(false);
   const [citationFormat, setCitationFormat] = React.useState<'APA' | 'Vancouver'>('APA');
   const [slideIndex, setSlideIndex] = React.useState<number>(0);
+
+  if (!orthoCase || !patient) {
+    return (
+      <div className="bg-white rounded-xl border border-slate-200 p-8 text-center space-y-3">
+        <div className="w-12 h-12 bg-amber-100 text-amber-700 rounded-full flex items-center justify-center mx-auto">
+          <AlertTriangle className="w-6 h-6" />
+        </div>
+        <h3 className="text-base font-bold text-slate-800">
+          {language === 'ar' ? 'لم يتم تحديد حالة لإصدار التقرير' : 'No Active Case Selected for Reporting'}
+        </h3>
+        <p className="text-xs text-slate-500 max-w-md mx-auto">
+          {language === 'ar'
+            ? 'يرجى اختيار حالة تقويمية محددة من القائمة الجانبية لإصدار التقرير العلمي.'
+            : 'Please select an active case from the sidebar to generate scientific reports.'}
+        </p>
+      </div>
+    );
+  }
 
   const applyPreset = (newPreset: ReportTemplatePreset) => {
     setPreset(newPreset);

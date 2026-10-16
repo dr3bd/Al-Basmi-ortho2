@@ -39,8 +39,8 @@ import {
 import { CephTracingCanvas, ClinicalRecordIllustration } from './CephTracingCanvas';
 
 interface ClinicalCaseWorkspaceProps {
-  orthoCase: OrthodonticCase;
-  patient: Patient;
+  orthoCase?: OrthodonticCase;
+  patient?: Patient;
   warnings: ClinicalWarning[];
   inventory: InventoryMaterial[];
   language: LanguageMode;
@@ -96,6 +96,24 @@ export const ClinicalCaseWorkspace: React.FC<ClinicalCaseWorkspaceProps> = ({
     'متابعة إغلاق المسافات ومراقبة العزم الجذري (Root Torque).'
   );
 
+  if (!orthoCase || !patient) {
+    return (
+      <div className="bg-white rounded-xl border border-slate-200 p-8 text-center space-y-3">
+        <div className="w-12 h-12 bg-amber-100 text-amber-700 rounded-full flex items-center justify-center mx-auto">
+          <AlertTriangle className="w-6 h-6" />
+        </div>
+        <h3 className="text-base font-bold text-slate-800">
+          {language === 'ar' ? 'لم يتم تحديد حالة علاجية نشطة' : 'No Active Clinical Case Selected'}
+        </h3>
+        <p className="text-xs text-slate-500 max-w-md mx-auto">
+          {language === 'ar'
+            ? 'يرجى اختيار مريض وحالة تقويمية من القائمة الجانبية أو إضافة مريض وحالة جديدة للبدء.'
+            : 'Please select a patient and orthodontic case from the sidebar or add a new clinical record to begin.'}
+        </p>
+      </div>
+    );
+  }
+
   const toggleProcedure = (proc: string) => {
     setSelectedProcedures((prev) =>
       prev.includes(proc) ? prev.filter((p) => p !== proc) : [...prev, proc]
@@ -103,6 +121,7 @@ export const ClinicalCaseWorkspace: React.FC<ClinicalCaseWorkspaceProps> = ({
   };
 
   const handleSaveQuickVisit = () => {
+    if (!orthoCase || !patient) return;
     const mat = inventory.find((m) => m.id === selectedMaterialId);
     const procsAr = selectedProcedures.map((p) => formatProcedure('ar', p)).join(' + ');
     const newVisit: ClinicalVisit = {

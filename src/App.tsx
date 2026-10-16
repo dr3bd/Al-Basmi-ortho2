@@ -60,6 +60,9 @@ import { P3ClinicalCoreWorkspace } from './components/P3ClinicalCoreWorkspace';
 import { ReportEngineView } from './components/ReportEngineView';
 import { AIDecisionSupportView } from './components/AIDecisionSupportView';
 import { OperationalAndSyncView } from './components/OperationalAndSyncView';
+import { PatientMasterList } from './components/patient/PatientMasterList';
+import { PatientDetailView } from './components/patient/PatientDetailView';
+import { NewPatientModal } from './components/patient/NewPatientModal';
 import { useClinicalStorage } from './storage/context/ClinicalStorageContext.tsx';
 import {
   SqlitePatientRow,
@@ -438,6 +441,7 @@ const STORAGE_KEYS = {
 
 type PrimaryNavSection =
   | 'dashboard'
+  | 'patients'
   | 'case_workspace'
   | 'reports'
   | 'ai_assistant'
@@ -454,13 +458,15 @@ type CaseSubTab =
 export default function App() {
   const [language, setLanguage] = React.useState<LanguageMode>('ar');
   const [isOnline, setIsOnline] = React.useState<boolean>(true);
-  const [activeNav, setActiveNav] = React.useState<PrimaryNavSection>('case_workspace');
+  const [activeNav, setActiveNav] = React.useState<PrimaryNavSection>('patients');
   const [activeCaseTab, setActiveCaseTab] = React.useState<CaseSubTab>('diagnosis_problems');
   const [activeOpTab, setActiveOpTab] = React.useState<
     'p0_architecture' | 'p3_sandbox' | 'finance' | 'inventory' | 'sync'
   >('p0_architecture');
   const [searchQuery, setSearchQuery] = React.useState<string>('');
   const [showNewCaseModal, setShowNewCaseModal] = React.useState<boolean>(false);
+  const [showNewPatientModal, setShowNewPatientModal] = React.useState<boolean>(false);
+  const [selectedPatientId, setSelectedPatientId] = React.useState<string | null>(null);
   const [caseScope, setCaseScope] = React.useState<'all' | 'clinical' | 'demo'>('all');
 
   // Clinical SQLite Storage Integration (Phase R2-A, R2-B, R2-C, R2-D)
@@ -478,7 +484,7 @@ export default function App() {
     switchStorageMode,
   } = useClinicalStorage();
   const [persistenceError, setPersistenceError] = React.useState<string | null>(null);
-  const [isCreatingPatient, setIsCreatingPatient] = React.useState<boolean>(false);
+  const [isCreatingCase, setIsCreatingCase] = React.useState<boolean>(false);
 
   // In-memory display projection of patients (authoritatively loaded from SQLite upon storage readiness)
   const [patients, setPatients] = React.useState<Patient[]>(INITIAL_PATIENTS);
@@ -490,9 +496,12 @@ export default function App() {
       if (storageStatus === 'READY' && cohort2PatientService) {
         try {
           const sqliteRows = await cohort2PatientService.listActivePatients();
-          if (isMounted && sqliteRows && sqliteRows.length > 0) {
-            const mapped = sqliteRows.map(mapSqlitePatientToUi);
+          if (isMounted) {
+            const mapped = (sqliteRows || []).map(mapSqlitePatientToUi);
             setPatients((prev) => {
+              if (storageMode === 'CLINICAL') {
+                return mapped;
+              }
               const sqliteIds = new Set(mapped.map((p) => p.id));
               const remainingDemo = prev.filter(
                 (p) => !sqliteIds.has(p.id) && INITIAL_PATIENTS.some((dp) => dp.id === p.id)
@@ -509,7 +518,7 @@ export default function App() {
     return () => {
       isMounted = false;
     };
-  }, [storageStatus, cohort2PatientService]);
+  }, [storageStatus, cohort2PatientService, storageMode]);
 
   const [cases, setCases] = React.useState<OrthodonticCase[]>(() => {
     try {
@@ -642,15 +651,12 @@ export default function App() {
     }
   });
 
-  const [selectedCaseId, setSelectedCaseId] = React.useState<string>(INITIAL_CASES[0].id);
+  const [selectedCaseId, setSelectedCaseId] = React.useState<string | null>(null);
 
-  // New Case Modal State
-  const [newCaseMode, setNewCaseMode] = React.useState<'new_patient' | 'existing_patient'>('new_patient');
-  const [selectedExistingPatientId, setSelectedExistingPatientId] = React.useState<string>('');
+  // New Case Modal State (links to existing target patient)
+  const [newCaseTargetPatientId, setNewCaseTargetPatientId] = React.useState<string>('');
   const [newCaseType, setNewCaseType] = React.useState<string>('Comprehensive Fixed Appliance');
-  const [newPatientNameAr, setNewPatientNameAr] = React.useState('');
-  const [newPatientNameEn, setNewPatientNameEn] = React.useState('');
-  const [newPatientDob, setNewPatientDob] = React.useState('2010-05-15');
+  const [newCaseStartDate, setNewCaseStartDate] = React.useState<string>(() => new Date().toISOString().slice(0, 10));
   const [newCaseChiefComplaintEn, setNewCaseChiefComplaintEn] = React.useState('');
 
   // Persist non-migrated clinical entities to Local Storage (Patients & Cases are authoritative in SQLite)
@@ -667,12 +673,76 @@ export default function App() {
     }
   }, [cases, inventory, auditLogs, syncQueue]);
 
-  const activeCase = cases.find((c) => c.id === selectedCaseId) || cases[0];
-  const activePatient =
-    patients.find((p) => p.id === activeCase.patientId) || patients[0];
+  const visiblePatients = React.useMemo(() => {
+    if (storageMode === 'CLINICAL') {
+      return patients.filter((p) => !p.isDemo);
+    }
+    if (caseScope === 'clinical') {
+      return patients.filter((p) => !p.isDemo);
+    }
+    if (caseScope === 'demo') {
+      return patients.filter((p) => p.isDemo);
+    }
+    return patients;
+  }, [patients, storageMode, caseScope]);
+
+  const visibleCases = React.useMemo(() => {
+    if (storageMode === 'CLINICAL') {
+      return cases.filter((c) => !c.isDemo);
+    }
+    if (caseScope === 'clinical') {
+      return cases.filter((c) => !c.isDemo);
+    }
+    if (caseScope === 'demo') {
+      return cases.filter((c) => c.isDemo);
+    }
+    return cases;
+  }, [cases, storageMode, caseScope]);
+
+  const caseCountsByPatient = React.useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const c of visibleCases) {
+      counts[c.patientId] = (counts[c.patientId] || 0) + 1;
+    }
+    return counts;
+  }, [visibleCases]);
+
+  // 1. Patient Anchor Resolution (Strict Mode Isolation)
+  const activePatient = React.useMemo<Patient | undefined>(() => {
+    if (selectedPatientId) {
+      const match = visiblePatients.find((p) => p.id === selectedPatientId);
+      if (match) return match;
+    }
+    return visiblePatients[0];
+  }, [visiblePatients, selectedPatientId]);
+
+  // 2. Case Resolution Strictly Bounded to Active Patient
+  const activeCase = React.useMemo<OrthodonticCase | undefined>(() => {
+    if (!activePatient) return undefined;
+    const patientCases = visibleCases.filter((c) => c.patientId === activePatient.id);
+    if (selectedCaseId) {
+      const match = patientCases.find((c) => c.id === selectedCaseId);
+      if (match) return match;
+    }
+    return patientCases[0];
+  }, [activePatient, visibleCases, selectedCaseId]);
+
+  // 3. Loop-Free Selection State Synchronization
+  React.useEffect(() => {
+    if (activePatient && selectedPatientId !== activePatient.id) {
+      setSelectedPatientId(activePatient.id);
+    } else if (!activePatient && selectedPatientId !== null) {
+      setSelectedPatientId(null);
+    }
+    if (activeCase && selectedCaseId !== activeCase.id) {
+      setSelectedCaseId(activeCase.id);
+    } else if (!activeCase && selectedCaseId !== null) {
+      setSelectedCaseId(null);
+    }
+  }, [activePatient, activeCase, selectedPatientId, selectedCaseId]);
 
   const activeWarnings = React.useMemo(
-    () => runClinicalConsistencyAndQualityChecks(activeCase),
+    () => (activeCase ? runClinicalConsistencyAndQualityChecks(activeCase) : []),
     [activeCase]
   );
 
@@ -694,8 +764,27 @@ export default function App() {
     auditAction?: string,
     auditDetails?: string
   ) => {
+    // Contract Invariant: Resolve target case baseline from authoritative state (§17 Cross-Case Isolation)
+    const baseCase = cases.find((c) => c.id === updated.id);
+    if (!baseCase) {
+      console.warn(`Blocked case update: Target case ${updated.id} not found in state.`);
+      return;
+    }
+    if (updated.patientId !== baseCase.patientId) {
+      console.warn(`Blocked case update: Cross-case ownership mutation rejected for case ${updated.id}.`);
+      return;
+    }
+
+    // Classification Invariant (§1, §16): Reject classification tampering and derive trusted persistence routing
+    if (Boolean(updated.isDemo) !== Boolean(baseCase.isDemo)) {
+      console.warn(`Blocked case update: Case classification (isDemo) tampering rejected for case ${updated.id}.`);
+      return;
+    }
+    const isClinical = !baseCase.isDemo;
+    updated = { ...updated, isDemo: baseCase.isDemo };
+
     // If case is an authoritative physical SQLite case, enforce SQLite persistence for problems & diagnosis
-    if (!updated.isDemo) {
+    if (isClinical) {
       if (storageStatus !== 'READY' || !cohort2ProblemDiagnosisService) {
         setPersistenceError(
           language === 'ar'
@@ -704,7 +793,6 @@ export default function App() {
         );
         return;
       }
-
       if (storageMode === 'CLINICAL' && !isDurable) {
         setPersistenceError(
           language === 'ar'
@@ -721,8 +809,8 @@ export default function App() {
         // 0A. Detect updated case metadata (chief complaint / notes)
         if (
           cohort2CaseService &&
-          (updated.chiefComplaintEn !== activeCase.chiefComplaintEn ||
-            updated.chiefComplaintAr !== activeCase.chiefComplaintAr)
+          (updated.chiefComplaintEn !== baseCase.chiefComplaintEn ||
+            updated.chiefComplaintAr !== baseCase.chiefComplaintAr)
         ) {
           await cohort2CaseService.updateCaseMetadata({
             caseId: updated.id,
@@ -741,11 +829,10 @@ export default function App() {
 
         // 0B. Detect updated clinical examination (extraoral, intraoral, occlusal, cbct)
         const examChanged =
-          JSON.stringify(updated.extraoral) !== JSON.stringify(activeCase.extraoral) ||
-          JSON.stringify(updated.intraoral) !== JSON.stringify(activeCase.intraoral) ||
-          JSON.stringify(updated.occlusal) !== JSON.stringify(activeCase.occlusal) ||
-          JSON.stringify(updated.cbctAndRadiographs) !== JSON.stringify(activeCase.cbctAndRadiographs);
-
+          JSON.stringify(updated.extraoral) !== JSON.stringify(baseCase.extraoral) ||
+          JSON.stringify(updated.intraoral) !== JSON.stringify(baseCase.intraoral) ||
+          JSON.stringify(updated.occlusal) !== JSON.stringify(baseCase.occlusal) ||
+          JSON.stringify(updated.cbctAndRadiographs) !== JSON.stringify(baseCase.cbctAndRadiographs);
         if (examChanged && cohort2VisitService) {
           const examRes = await cohort2VisitService.createExamination({
             caseId: updated.id,
@@ -783,7 +870,6 @@ export default function App() {
             deviceId,
             timestamp: nowIso,
           });
-
           const verifiedExam = await cohort2VisitService.getExaminationById(examRes.examination.id);
           if (!verifiedExam) {
             throw new Error(`Post-write verification failed: Examination ${examRes.examination.id} not found in SQLite.`);
@@ -791,11 +877,10 @@ export default function App() {
         }
 
         // 1. Detect newly added problems
-        const existingProblems = activeCase.problemList || [];
+        const existingProblems = baseCase.problemList || [];
         const newProblems = (updated.problemList || []).filter(
           (up) => !existingProblems.some((ep) => ep.id === up.id)
         );
-
         for (const np of newProblems) {
           const categoryMap: Record<string, SqliteProblemRow['category']> = {
             'Skeletal': 'SKELETAL',
@@ -804,7 +889,6 @@ export default function App() {
             'Occlusal': 'OCCLUSAL',
             'CBCT / Radiographic': 'AIRWAY',
           };
-
           const pRes = await cohort2ProblemDiagnosisService.createProblem({
             id: np.id.startsWith('prob_') ? `prb-${np.id}` : np.id,
             caseId: updated.id,
@@ -819,7 +903,6 @@ export default function App() {
             deviceId,
             timestamp: nowIso,
           });
-
           // Post-write verification
           const verified = await cohort2ProblemDiagnosisService.getProblemById(pRes.problem.id);
           if (!verified) {
@@ -850,12 +933,12 @@ export default function App() {
         // 3. Detect updated diagnosis (any structured field or synthesis statement change)
         const diagChanged =
           updated.diagnosis &&
-          (updated.diagnosis.version > activeCase.diagnosis.version ||
-            updated.diagnosis.skeletalSagittal !== activeCase.diagnosis.skeletalSagittal ||
-            updated.diagnosis.skeletalVertical !== activeCase.diagnosis.skeletalVertical ||
-            updated.diagnosis.skeletalTransverse !== activeCase.diagnosis.skeletalTransverse ||
-            updated.diagnosis.comprehensiveStatementEn !== activeCase.diagnosis.comprehensiveStatementEn ||
-            updated.diagnosis.comprehensiveStatementAr !== activeCase.diagnosis.comprehensiveStatementAr);
+          (updated.diagnosis.version > baseCase.diagnosis.version ||
+            updated.diagnosis.skeletalSagittal !== baseCase.diagnosis.skeletalSagittal ||
+            updated.diagnosis.skeletalVertical !== baseCase.diagnosis.skeletalVertical ||
+            updated.diagnosis.skeletalTransverse !== baseCase.diagnosis.skeletalTransverse ||
+            updated.diagnosis.comprehensiveStatementEn !== baseCase.diagnosis.comprehensiveStatementEn ||
+            updated.diagnosis.comprehensiveStatementAr !== baseCase.diagnosis.comprehensiveStatementAr);
 
         if (diagChanged) {
           const existingDiagVersions = await cohort2ProblemDiagnosisService.listDiagnosisVersionsByCaseId(
@@ -958,6 +1041,7 @@ export default function App() {
   };
 
   const handleAddQuickVisit = async (visit: ClinicalVisit) => {
+    if (!activeCase) return;
     // If case is not a demo case, enforce SQLite persistence
     if (!activeCase.isDemo) {
       if (storageStatus !== 'READY' || !cohort2VisitService) {
@@ -1038,6 +1122,7 @@ export default function App() {
   };
 
   const handleAcceptAIProblem = (newItem: ProblemObjectiveItem) => {
+    if (!activeCase) return;
     handleUpdateCase(
       {
         ...activeCase,
@@ -1049,6 +1134,7 @@ export default function App() {
   };
 
   const handleApproveAIDiagnosisDraft = (summaryEn: string) => {
+    if (!activeCase) return;
     handleUpdateCase(
       {
         ...activeCase,
@@ -1066,6 +1152,15 @@ export default function App() {
   };
 
   const handleRecordPayment = (installmentId: string, amount: number) => {
+    if (!activeCase || !activePatient || activeCase.patientId !== activePatient.id) {
+      console.warn('Blocked financial mutation: missing valid case or case does not belong to active patient.');
+      return;
+    }
+    const targetInstallment = activeCase.financials.installments.find((inst) => inst.id === installmentId);
+    if (!targetInstallment) {
+      console.warn(`Blocked financial mutation: installment ${installmentId} does not belong to activeCase ${activeCase.id}.`);
+      return;
+    }
     const updatedInstallments = activeCase.financials.installments.map((inst) =>
       inst.id === installmentId
         ? {
@@ -1145,132 +1240,173 @@ export default function App() {
     URL.revokeObjectURL(url);
   };
 
+  const handleOpenNewCaseModal = (patientId?: string) => {
+    setPersistenceError(null);
+    if (patientId) {
+      setNewCaseTargetPatientId(patientId);
+    } else if (activeNav === 'patients' && activePatient) {
+      setNewCaseTargetPatientId(activePatient.id);
+    } else {
+      setNewCaseTargetPatientId('');
+    }
+    setNewCaseStartDate(new Date().toISOString().slice(0, 10));
+    setShowNewCaseModal(true);
+  };
+
   const handleCreateNewCase = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newPatientNameEn.trim() && !newPatientNameAr.trim()) return;
     setPersistenceError(null);
 
-    if (storageStatus !== 'READY' || !cohort2PatientService) {
+    const targetPatient = visiblePatients.find((p) => p.id === newCaseTargetPatientId);
+    if (!targetPatient) {
       setPersistenceError(
         language === 'ar'
-          ? 'محرك التخزين السريري SQLite غير جاهز بعد أو غير متوفر. يرجى الانتظار.'
-          : 'SQLite clinical storage engine is not ready or unavailable.'
+          ? 'خطأ: يجب اختيار مريض مسجل مسبقاً لربط الحالة التقويمية به.'
+          : 'Error: An existing, registered patient must be selected to link this orthodontic case.'
       );
       return;
     }
 
-    if (storageMode === 'CLINICAL' && !isDurable) {
+    if (storageMode === 'CLINICAL' && targetPatient.isDemo) {
       setPersistenceError(
         language === 'ar'
-          ? 'خطأ أمني: التخزين الدائم غير متوفر في الوضع السريري. تم منع حفظ السجل لحماية بيانات المريض.'
-          : 'Security Violation: Durable persistent storage is unavailable in Clinical Mode. Clinical write blocked.'
+          ? 'خطأ أمني: لا يمكن إنشاء حالة سريرية لمريض تجريبي في الوضع السريري.'
+          : 'Security Violation: Cannot create clinical cases for synthetic demo patients in Clinical Mode.'
       );
       return;
     }
 
-    setIsCreatingPatient(true);
+    const chiefComplaint = newCaseChiefComplaintEn.trim();
+    if (!chiefComplaint) {
+      setPersistenceError(
+        language === 'ar'
+          ? 'يرجى إدخال الشكوى الرئيسية للحالة التقويمية.'
+          : 'Please enter the chief complaint for the orthodontic case.'
+      );
+      return;
+    }
+
+    const isClinical = !targetPatient.isDemo;
+
+    if (isClinical) {
+      if (storageStatus !== 'READY' || !cohort2CaseService) {
+        setPersistenceError(
+          language === 'ar'
+            ? 'محرك التخزين السريري SQLite غير جاهز بعد أو غير متوفر. يرجى الانتظار.'
+            : 'SQLite clinical storage engine is not ready or unavailable.'
+        );
+        return;
+      }
+
+      if (storageMode === 'CLINICAL' && !isDurable) {
+        setPersistenceError(
+          language === 'ar'
+            ? 'خطأ أمني: التخزين الدائم غير متوفر في الوضع السريري. تم منع حفظ السجل لحماية بيانات المريض.'
+            : 'Security Violation: Durable persistent storage is unavailable in Clinical Mode. Clinical write blocked.'
+        );
+        return;
+      }
+    }
+
+    setIsCreatingCase(true);
     try {
-      const trimmedEn = newPatientNameEn.trim();
-      const trimmedAr = newPatientNameAr.trim();
-      const primaryName = trimmedEn || trimmedAr;
-      const firstName = primaryName.split(' ')[0] || 'مريض';
-      const lastName = primaryName.split(' ').slice(1).join(' ') || (trimmedAr ? 'الجديد' : 'New');
-      const patSeq = Date.now().toString().slice(-4);
-      const patientNumber = `PAT-2026-${patSeq}`;
-      const patientId = `pat-${Date.now()}`;
-      const deviceId = deviceInfo?.deviceId || 'dev-browser-client';
-      const nowIso = new Date().toISOString();
-
-      // 1. Authoritative SQLite persistence (Atomic: patients + audit_logs + sync_operations)
-      const patientResult = await cohort2PatientService.createPatient({
-        id: patientId,
-        patientNumber,
-        firstName,
-        lastName,
-        dateOfBirth: newPatientDob || '2010-05-15',
-        sex: 'FEMALE',
-        phone: '+966500000000',
-        userId: 'usr-dr-albasmi',
-        userRole: 'ORTHODONTIST',
-        deviceId,
-        timestamp: nowIso,
-        generalNotes: 'Initial orthodontic consultation.',
-      });
-
-      // 2. Post-write verification gate: Confirm patient exists authoritatively in SQLite
-      const verifiedPatient = await cohort2PatientService.getPatientById(patientResult.patient.id);
-      if (!verifiedPatient) {
-        throw new Error(
-          'Post-write verification failed: Patient row was not found in SQLite after commit. Case creation aborted.'
-        );
-      }
-
-      // 3. Defense-in-depth: Ensure target patient is NOT a synthetic demo patient ID
-      if (INITIAL_PATIENTS.some((dp) => dp.id === verifiedPatient.id)) {
-        throw new Error(
-          'Integrity Violation: Real clinical cases cannot be attached to synthetic demo patient IDs.'
-        );
-      }
-
-      // 4. Authoritative SQLite persistence for Orthodontic Case (Atomic: cases + audit_logs + sync_operations)
-      if (!cohort2CaseService) {
-        throw new Error('Cohort2CasePersistenceService is unavailable.');
-      }
-
-      const newCaseId = `case-${Date.now()}`;
       const newCaseNumber = `ORT-2026-${Date.now().toString().slice(-6)}`;
-      const chiefComplaint =
-        newCaseChiefComplaintEn?.trim() || (trimmedAr ? `استشارة تقويمية - ${trimmedAr}` : 'Orthodontic Consultation');
+      const newCaseId = `case-${Date.now()}`;
+      const nowIso = new Date().toISOString();
+      const startDate = newCaseStartDate || nowIso.slice(0, 10);
+      const deviceId = deviceInfo?.deviceId || 'dev-browser-client';
 
-      const caseResult = await cohort2CaseService.createCase({
-        id: newCaseId,
-        caseNumber: newCaseNumber,
-        patientId: verifiedPatient.id,
-        caseType: 'COMPREHENSIVE',
-        caseStatus: 'CONSULTATION',
-        chiefComplaint,
-        startDate: nowIso.slice(0, 10),
-        primaryProviderId: 'usr-dr-albasmi',
-        clinicId: 'clinic-main',
-        userId: 'usr-dr-albasmi',
-        userRole: 'ORTHODONTIST',
-        deviceId,
-        timestamp: nowIso,
-        notes: trimmedAr ? `حالة تقويمية للمريض ${trimmedAr}` : null,
-      });
+      let createdUiCase: OrthodonticCase;
 
-      // 5. Post-write verification gate: Confirm case exists authoritatively in SQLite
-      const verifiedCase = await cohort2CaseService.getCaseById(caseResult.case.id);
-      if (!verifiedCase) {
-        throw new Error(
-          'Post-write verification failed: Case row was not found in SQLite after commit.'
-        );
+      if (isClinical) {
+        if (!cohort2CaseService) {
+          throw new Error('Cohort2CasePersistenceService is unavailable.');
+        }
+
+        const caseTypeSqliteMap: Record<string, SqliteOrthodonticCaseRow['case_type']> = {
+          'Comprehensive Fixed Appliance': 'COMPREHENSIVE',
+          'Growth Modification + Fixed': 'INTERCEPTIVE',
+          'MARPE + Skeletal Anchorage': 'ORTHOPEDIC',
+          'Surgical-Orthodontic': 'SURGICAL_ORTHODONTIC',
+          'Clear Aligner Therapy': 'LIMITED',
+          'Retreatment': 'RETREATMENT',
+        };
+
+        const caseResult = await cohort2CaseService.createCase({
+          id: newCaseId,
+          caseNumber: newCaseNumber,
+          patientId: targetPatient.id,
+          caseType: caseTypeSqliteMap[newCaseType] || 'COMPREHENSIVE',
+          caseStatus: 'CONSULTATION',
+          chiefComplaint,
+          startDate,
+          primaryProviderId: 'usr-dr-albasmi',
+          clinicId: 'clinic-main',
+          userId: 'usr-dr-albasmi',
+          userRole: 'ORTHODONTIST',
+          deviceId,
+          timestamp: nowIso,
+          notes: targetPatient.fullNameAr ? `حالة تقويمية للمريض ${targetPatient.fullNameAr}` : null,
+        });
+
+        // Post-write verification gate: Confirm case exists authoritatively in SQLite
+        const verifiedCase = await cohort2CaseService.getCaseById(caseResult.case.id);
+        if (!verifiedCase) {
+          throw new Error(
+            'Post-write verification failed: Case row was not found in SQLite after commit.'
+          );
+        }
+
+        createdUiCase = mapSqliteCaseToUi(verifiedCase, targetPatient);
+      } else {
+        // Ephemeral Demo mode case
+        createdUiCase = {
+          id: newCaseNumber,
+          patientId: targetPatient.id,
+          caseType: newCaseType as OrthodonticCase['caseType'],
+          status: 'Consultation',
+          startDate,
+          expectedCompletionDate: new Date(Date.now() + 540 * 86400000).toISOString().slice(0, 10),
+          treatingDoctor: 'Dr. Al-Basmi (Orthodontic Specialist)',
+          chiefComplaintEn: chiefComplaint,
+          chiefComplaintAr: targetPatient.fullNameAr ? `حالة تقويمية للمريض ${targetPatient.fullNameAr}` : '',
+          patientExpectations: '',
+          extraoral: createBlankExtraoralExam(),
+          intraoral: createBlankIntraoralExam(),
+          occlusal: createBlankOcclusalExam(),
+          cbctAndRadiographs: createBlankCBCTRecord(),
+          problemList: [],
+          diagnosis: createBlankDiagnosisRecord(startDate),
+          diagnosisHistory: [],
+          treatmentOptions: [],
+          cephRecords: [],
+          visits: [],
+          photos: [],
+          retentionAndResidual: createBlankRetentionRecord(),
+          financials: createBlankFinancialRecord(),
+          referencesIds: [],
+          isDemo: true,
+        };
       }
 
-      // 6. Map to UI presentation only AFTER confirmed successful persistence
-      const createdUiPatient = mapSqlitePatientToUi(patientResult.patient);
-      const createdUiCase = mapSqliteCaseToUi(verifiedCase, createdUiPatient);
-
-      setPatients((prev) => [createdUiPatient, ...prev]);
       setCases((prev) => [createdUiCase, ...prev]);
+      setSelectedPatientId(targetPatient.id);
       setSelectedCaseId(createdUiCase.id);
       setShowNewCaseModal(false);
-      setNewPatientNameAr('');
-      setNewPatientNameEn('');
       setNewCaseChiefComplaintEn('');
       setActiveNav('case_workspace');
       setActiveCaseTab('examination');
       appendAuditLog(
-        'Case Core (SQLite)',
-        `Created Authoritative SQLite Case ${createdUiCase.id} (${newCaseNumber}) for Patient ${createdUiPatient.id}`,
-        createdUiPatient.fullNameEn
+        isClinical ? 'Case Core (SQLite)' : 'Case Core (Demo)',
+        `Created Orthodontic Case ${createdUiCase.id} (${newCaseNumber}) for Patient ${targetPatient.id}`,
+        targetPatient.fullNameEn
       );
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       setPersistenceError(msg);
-      console.error('Patient creation failed (transaction rolled back):', err);
+      console.error('Case creation failed (transaction rolled back):', err);
     } finally {
-      setIsCreatingPatient(false);
+      setIsCreatingCase(false);
     }
   };
 
@@ -1282,9 +1418,9 @@ export default function App() {
     return (
       c.id.toLowerCase().includes(q) ||
       c.caseType.toLowerCase().includes(q) ||
-      c.diagnosis.skeletalSagittal.toLowerCase().includes(q) ||
-      pat?.fullNameEn.toLowerCase().includes(q) ||
-      pat?.fullNameAr.includes(searchQuery)
+      Boolean(c.diagnosis?.skeletalSagittal?.toLowerCase().includes(q)) ||
+      Boolean(pat?.fullNameEn?.toLowerCase().includes(q)) ||
+      Boolean(pat?.fullNameAr?.includes(searchQuery))
     );
   });
 
@@ -1354,7 +1490,7 @@ export default function App() {
           Al-Basmi Orth
         </a>
 
-        {/* Zone 2: 5 Primary Navigation Links */}
+        {/* Zone 2: 6 Primary Navigation Links */}
         <nav className="hidden md:flex items-center gap-6 text-sm font-medium text-slate-600">
           <button
             onClick={() => setActiveNav('dashboard')}
@@ -1365,6 +1501,16 @@ export default function App() {
             }`}
           >
             {language === 'ar' ? 'لوحة العيادة' : 'Clinic Overview'}
+          </button>
+          <button
+            onClick={() => setActiveNav('patients')}
+            className={`py-1 transition-colors whitespace-nowrap ${
+              activeNav === 'patients'
+                ? 'text-blue-600 border-b-2 border-blue-600 font-semibold'
+                : 'hover:text-slate-900'
+            }`}
+          >
+            {language === 'ar' ? 'سجل المرضى' : 'Patients'}
           </button>
           <button
             onClick={() => setActiveNav('case_workspace')}
@@ -1408,7 +1554,7 @@ export default function App() {
           </button>
         </nav>
 
-        {/* Zone 3: 2 Primary Actions (2-Option Language Switcher & New Case) */}
+        {/* Zone 3: 3 Primary Actions (2-Option Language Switcher, New Patient & New Case) */}
         <div className="flex items-center gap-2.5">
           <div className="flex items-center bg-slate-100 p-0.5 rounded-lg border border-slate-200">
             <button
@@ -1433,7 +1579,13 @@ export default function App() {
             </button>
           </div>
           <button
-            onClick={() => setShowNewCaseModal(true)}
+            onClick={() => setShowNewPatientModal(true)}
+            className="px-3 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg transition-colors whitespace-nowrap"
+          >
+            {language === 'ar' ? '+ مريض جديد' : '+ New Patient'}
+          </button>
+          <button
+            onClick={() => handleOpenNewCaseModal(activeNav === 'patients' && activePatient ? activePatient.id : undefined)}
             className="px-3.5 py-1.5 text-xs font-semibold text-white bg-slate-900 rounded-lg hover:bg-slate-800 transition-colors whitespace-nowrap"
           >
             {language === 'ar' ? '+ حالة تقويم جديدة' : '+ New Ortho Case'}
@@ -1513,7 +1665,7 @@ export default function App() {
             <div className="space-y-2 max-h-72 lg:max-h-none overflow-y-auto">
               {filteredCases.map((c) => {
                 const pat = patients.find((p) => p.id === c.patientId);
-                const isSelected = c.id === activeCase.id;
+                const isSelected = c.id === activeCase?.id;
                 const isCaseDemo = c.isDemo || pat?.isDemo;
                 return (
                   <button
@@ -1552,8 +1704,8 @@ export default function App() {
                         isSelected ? 'text-slate-300' : 'text-slate-500'
                       }`}
                     >
-                      {formatSkeletalSagittal(language, c.diagnosis.skeletalSagittal)} · OJ{' '}
-                      {c.occlusal.overjetInitialMm}→{c.occlusal.overjetCurrentMm}mm
+                      {formatSkeletalSagittal(language, c.diagnosis?.skeletalSagittal)} · OJ{' '}
+                      {c.occlusal?.overjetInitialMm}→{c.occlusal?.overjetCurrentMm}mm
                     </div>
                   </button>
                 );
@@ -1565,49 +1717,55 @@ export default function App() {
               <div className="font-semibold text-slate-800">
                 {language === 'ar' ? 'ملخص مؤشرات الحالة النشطة' : 'Active Case Telemetry'}
               </div>
-              <div className="p-3 bg-slate-50 rounded border border-slate-200 space-y-1.5 text-[11px]">
-                <div className="flex justify-between">
-                  <span className="text-slate-500">
-                    {language === 'ar' ? 'النضج العظمي (CVM):' : 'CVM Maturation:'}
-                  </span>
-                  <span className="font-mono font-semibold text-slate-900">
-                    {activeCase.cbctAndRadiographs.cvmStage}
-                  </span>
+              {activeCase ? (
+                <div className="p-3 bg-slate-50 rounded border border-slate-200 space-y-1.5 text-[11px]">
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">
+                      {language === 'ar' ? 'النضج العظمي (CVM):' : 'CVM Maturation:'}
+                    </span>
+                    <span className="font-mono font-semibold text-slate-900">
+                      {activeCase.cbctAndRadiographs?.cvmStage ?? '—'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">
+                      {language === 'ar' ? 'الزاوية السهمية (ANB):' : 'Initial / Final ANB:'}
+                    </span>
+                    <span className="font-mono font-semibold text-slate-900">
+                      {activeCase.cephRecords?.[0]?.values['ANB'] ?? '—'}° →{' '}
+                      {activeCase.cephRecords?.[activeCase.cephRecords.length - 1]?.values['ANB'] ?? '—'}°
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">
+                      {language === 'ar' ? 'البروز السني (Overjet):' : 'Overjet Progress:'}
+                    </span>
+                    <span className="font-mono font-semibold text-emerald-700">
+                      {activeCase.occlusal?.overjetInitialMm ?? '—'}mm → {activeCase.occlusal?.overjetCurrentMm ?? '—'}mm
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">
+                      {language === 'ar' ? 'فحص الاتساق السريري:' : 'Quality Warnings:'}
+                    </span>
+                    <span
+                      className={
+                        activeWarnings.length > 0
+                          ? 'text-amber-700 font-semibold'
+                          : 'text-emerald-700 font-semibold'
+                      }
+                    >
+                      {language === 'ar'
+                        ? `${activeWarnings.length} تنبيهات`
+                        : `${activeWarnings.length} Notices`}
+                    </span>
+                  </div>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-500">
-                    {language === 'ar' ? 'الزاوية السهمية (ANB):' : 'Initial / Final ANB:'}
-                  </span>
-                  <span className="font-mono font-semibold text-slate-900">
-                    {activeCase.cephRecords[0]?.values['ANB'] ?? '—'}° →{' '}
-                    {activeCase.cephRecords[activeCase.cephRecords.length - 1]?.values['ANB'] ?? '—'}°
-                  </span>
+              ) : (
+                <div className="p-3 bg-slate-50 rounded border border-slate-200 text-slate-400 text-[11px] italic">
+                  {language === 'ar' ? 'لا توجد حالة نشطة محددة' : 'No active case selected'}
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-500">
-                    {language === 'ar' ? 'البروز السني (Overjet):' : 'Overjet Progress:'}
-                  </span>
-                  <span className="font-mono font-semibold text-emerald-700">
-                    {activeCase.occlusal.overjetInitialMm}mm → {activeCase.occlusal.overjetCurrentMm}mm
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-500">
-                    {language === 'ar' ? 'فحص الاتساق السريري:' : 'Quality Warnings:'}
-                  </span>
-                  <span
-                    className={
-                      activeWarnings.length > 0
-                        ? 'text-amber-700 font-semibold'
-                        : 'text-emerald-700 font-semibold'
-                    }
-                  >
-                    {language === 'ar'
-                      ? `${activeWarnings.length} تنبيهات`
-                      : `${activeWarnings.length} Notices`}
-                  </span>
-                </div>
-              </div>
+              )}
             </div>
           </div>
 
@@ -1650,77 +1808,92 @@ export default function App() {
         {/* Main Content Area */}
         <main className="flex-1 p-5 lg:p-6 max-w-7xl mx-auto w-full space-y-6">
           {/* Active Patient & Case Context Ribbon */}
-          <div className="no-print bg-white border border-slate-200 rounded-lg p-4 flex flex-wrap items-center justify-between gap-4">
-            <div className="space-y-0.5">
-              <div className="flex items-center gap-2 text-xs text-slate-500">
-                <span className="font-mono font-bold text-blue-700">{activeCase.id}</span>
-                <span>·</span>
-                <span>{formatSkeletalSagittal(language, activeCase.diagnosis.skeletalSagittal)}</span>
-                <span>·</span>
-                <span>
-                  {language === 'ar'
-                    ? `الحالة: ${formatCaseStatus('ar', activeCase.status)}`
-                    : `Stage: ${activeCase.status}`}
+          {!activePatient || !activeCase ? (
+            <div className="no-print bg-amber-50/80 border border-amber-200 rounded-lg p-4 text-xs text-amber-900 flex items-center justify-between">
+              <div>
+                <span className="font-semibold">
+                  {language === 'ar' ? 'لا يوجد مريض أو حالة تقويمية محددة حالياً' : 'No active patient or case selected'}
                 </span>
-                <span>·</span>
-                <span className="font-mono">
+                <p className="text-[11px] text-amber-800/80 mt-0.5">
                   {language === 'ar'
-                    ? `البدء: ${activeCase.startDate}`
-                    : `Started: ${activeCase.startDate}`}
-                </span>
-              </div>
-              <div className="flex items-center gap-2.5">
-                <h1 className="text-lg font-bold text-slate-900">
-                  {language === 'ar' ? activePatient.fullNameAr : activePatient.fullNameEn}
-                </h1>
-                {activeCase.isDemo || activePatient.isDemo ? (
-                  <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-amber-100 text-amber-800 border border-amber-300">
-                    {language === 'ar' ? 'حالة تجريبية ما قبل سريرية (Demo)' : 'Pre-Clinical Demo Case'}
-                  </span>
-                ) : (
-                  <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-100 text-emerald-800 border border-emerald-300">
-                    {language === 'ar' ? 'سجل سريري معتمد (SQLite)' : 'Clinical Record (SQLite)'}
-                  </span>
-                )}
+                    ? 'يرجى تحديد مريض وحالة من القائمة الجانبية أو إضافة سجل سريري جديد.'
+                    : 'Please select a patient and case from the sidebar or create a new clinical record.'}
+                </p>
               </div>
             </div>
+          ) : (
+            <div className="no-print bg-white border border-slate-200 rounded-lg p-4 flex flex-wrap items-center justify-between gap-4">
+              <div className="space-y-0.5">
+                <div className="flex items-center gap-2 text-xs text-slate-500">
+                  <span className="font-mono font-bold text-blue-700">{activeCase.id}</span>
+                  <span>·</span>
+                  <span>{formatSkeletalSagittal(language, activeCase.diagnosis?.skeletalSagittal)}</span>
+                  <span>·</span>
+                  <span>
+                    {language === 'ar'
+                      ? `الحالة: ${formatCaseStatus('ar', activeCase.status)}`
+                      : `Stage: ${activeCase.status}`}
+                  </span>
+                  <span>·</span>
+                  <span className="font-mono">
+                    {language === 'ar'
+                      ? `البدء: ${activeCase.startDate}`
+                      : `Started: ${activeCase.startDate}`}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2.5">
+                  <h1 className="text-lg font-bold text-slate-900">
+                    {language === 'ar' ? activePatient.fullNameAr : activePatient.fullNameEn}
+                  </h1>
+                  {activeCase.isDemo || activePatient.isDemo ? (
+                    <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-amber-100 text-amber-800 border border-amber-300">
+                      {language === 'ar' ? 'بيانات تجريبية (Demo)' : 'Demo Record'}
+                    </span>
+                  ) : (
+                    <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                      {language === 'ar' ? 'سجل سريري' : 'Clinical Record'}
+                    </span>
+                  )}
+                </div>
+              </div>
 
-            {/* Quick Workflow Navigation Shortcuts */}
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                onClick={() => {
-                  setActiveNav('case_workspace');
-                  setActiveCaseTab('visits_progress');
-                }}
-                className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-md text-xs font-medium transition-colors whitespace-nowrap"
-              >
-                {language === 'ar' ? '+ تسجيل جلسة سريعة' : '+ Quick Visit'}
-              </button>
-              <button
-                onClick={() => {
-                  setActiveNav('case_workspace');
-                  setActiveCaseTab('cephalometrics');
-                }}
-                className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-md text-xs font-medium transition-colors whitespace-nowrap"
-              >
-                {language === 'ar'
-                  ? 'التحليل السيفالومتري (Cephalometrics)'
-                  : 'Ceph & Superimposition'}
-              </button>
-              <button
-                onClick={() => setActiveNav('ai_assistant')}
-                className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-md text-xs font-medium transition-colors whitespace-nowrap"
-              >
-                {language === 'ar' ? 'مناقشة الحالة بالذكاء الاصطناعي' : 'AI Case Discussion'}
-              </button>
-              <button
-                onClick={() => setActiveNav('reports')}
-                className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-xs font-semibold transition-colors whitespace-nowrap"
-              >
-                {language === 'ar' ? 'إصدار التقرير العلمي' : 'Generate Scientific Report'}
-              </button>
+              {/* Quick Workflow Navigation Shortcuts */}
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  onClick={() => {
+                    setActiveNav('case_workspace');
+                    setActiveCaseTab('visits_progress');
+                  }}
+                  className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-md text-xs font-medium transition-colors whitespace-nowrap"
+                >
+                  {language === 'ar' ? '+ تسجيل جلسة سريعة' : '+ Quick Visit'}
+                </button>
+                <button
+                  onClick={() => {
+                    setActiveNav('case_workspace');
+                    setActiveCaseTab('cephalometrics');
+                  }}
+                  className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-md text-xs font-medium transition-colors whitespace-nowrap"
+                >
+                  {language === 'ar'
+                    ? 'التحليل السيفالومتري (Cephalometrics)'
+                    : 'Ceph & Superimposition'}
+                </button>
+                <button
+                  onClick={() => setActiveNav('ai_assistant')}
+                  className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-md text-xs font-medium transition-colors whitespace-nowrap"
+                >
+                  {language === 'ar' ? 'مناقشة الحالة بالذكاء الاصطناعي' : 'AI Case Discussion'}
+                </button>
+                <button
+                  onClick={() => setActiveNav('reports')}
+                  className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-xs font-semibold transition-colors whitespace-nowrap"
+                >
+                  {language === 'ar' ? 'إصدار التقرير العلمي' : 'Generate Scientific Report'}
+                </button>
+              </div>
             </div>
-          </div>
+          )}
 
           {/* VIEW 1: CLINIC DASHBOARD */}
           {activeNav === 'dashboard' && (
@@ -1856,6 +2029,44 @@ export default function App() {
                     </tbody>
                   </table>
                 </div>
+              </div>
+            </div>
+          )}
+
+          {/* VIEW: PATIENTS MASTER-DETAIL WORKSPACE */}
+          {activeNav === 'patients' && (
+            <div className="flex flex-col lg:flex-row bg-white rounded-xl border border-slate-200 overflow-hidden min-h-[640px] shadow-xs">
+              <div className="w-full lg:w-80 xl:w-96 border-b lg:border-b-0 lg:border-r border-slate-200 flex flex-col">
+                <PatientMasterList
+                  patients={visiblePatients}
+                  selectedPatientId={activePatient?.id || null}
+                  onSelectPatient={(id) => {
+                    setSelectedPatientId(id);
+                    const matchingCase = visibleCases.find((c) => c.patientId === id);
+                    if (matchingCase) {
+                      setSelectedCaseId(matchingCase.id);
+                    }
+                  }}
+                  onOpenNewPatientModal={() => setShowNewPatientModal(true)}
+                  language={language}
+                  caseCountsByPatientId={caseCountsByPatient}
+                  isStorageReady={storageStatus === 'READY'}
+                  isClinicalMode={storageMode === 'CLINICAL'}
+                />
+              </div>
+              <div className="flex-1 flex flex-col overflow-y-auto">
+                <PatientDetailView
+                  patient={activePatient}
+                  cases={visibleCases}
+                  activeCaseId={activeCase?.id || null}
+                  onSelectCase={(caseId) => {
+                    setSelectedCaseId(caseId);
+                    setActiveNav('case_workspace');
+                  }}
+                  onOpenNewCaseModal={() => handleOpenNewCaseModal(activePatient?.id)}
+                  language={language}
+                  isStorageReady={storageStatus === 'READY'}
+                />
               </div>
             </div>
           )}
@@ -2045,8 +2256,8 @@ export default function App() {
             <div className="flex items-center justify-between border-b border-slate-200 pb-3">
               <h3 className="text-base font-bold text-slate-900">
                 {language === 'ar'
-                  ? 'فتح ملف مريض وحالة تقويمية جديدة'
-                  : 'Create New Patient & Orthodontic Case Record'}
+                  ? 'فتح حالة تقويمية جديدة'
+                  : 'Create New Orthodontic Case'}
               </h3>
               <button
                 onClick={() => setShowNewCaseModal(false)}
@@ -2057,7 +2268,7 @@ export default function App() {
             </div>
             {persistenceError && (
               <div className="p-3 bg-red-50 border border-red-200 text-red-700 rounded text-xs flex items-center gap-2">
-                <AlertTriangle className="w-4 h-4 text-red-600 flex-shrink-0" />
+                <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
                 <span className="font-mono text-[11px]">{persistenceError}</span>
               </div>
             )}
@@ -2071,76 +2282,159 @@ export default function App() {
                   : (language === 'ar' ? 'وضع المعاينة المؤقت (ذاكرة فقط)' : 'Ephemeral Preview (RAM Only)')}
               </span>
             </div>
-            <form onSubmit={handleCreateNewCase} className="space-y-3 text-xs">
+            <form onSubmit={handleCreateNewCase} className="space-y-3.5 text-xs">
+              {/* Target Patient Selection Dropdown */}
               <div>
                 <label className="font-semibold text-slate-700 block mb-1">
-                  Patient Full Name (Arabic / اسم المريض بالعربية)
+                  {language === 'ar' ? 'المريض المستهدف *' : 'Target Patient *'}
                 </label>
-                <input
-                  type="text"
-                  dir="rtl"
+                <select
+                  value={newCaseTargetPatientId}
+                  onChange={(e) => {
+                    setNewCaseTargetPatientId(e.target.value);
+                    setPersistenceError(null);
+                  }}
                   required
-                  value={newPatientNameAr}
-                  onChange={(e) => setNewPatientNameAr(e.target.value)}
-                  placeholder="مثال: ريم عبد الله القحطاني"
-                  className="w-full px-3 py-2 border border-slate-300 rounded"
-                />
+                  className="w-full px-3 py-2 border border-slate-300 rounded font-medium bg-white text-slate-900 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                >
+                  <option value="">
+                    {language === 'ar' ? '-- اختر مريضاً مسجلاً من القائمة --' : '-- Select registered patient --'}
+                  </option>
+                  {visiblePatients.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {language === 'ar' ? p.fullNameAr : p.fullNameEn} ({p.id}) {p.isDemo ? '(Demo)' : ''}
+                    </option>
+                  ))}
+                </select>
               </div>
+
+              {/* Read-Only Patient Summary Card */}
+              {(() => {
+                const targetPat = visiblePatients.find((p) => p.id === newCaseTargetPatientId);
+                if (targetPat) {
+                  return (
+                    <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg text-xs space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <span className="font-semibold text-slate-900">
+                          {language === 'ar' ? targetPat.fullNameAr : targetPat.fullNameEn}
+                        </span>
+                        <span className="px-2 py-0.5 rounded text-[10px] font-mono font-medium bg-blue-100 text-blue-800">
+                          {targetPat.id}
+                        </span>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-slate-600 text-[11px]">
+                        <span>
+                          <strong className="text-slate-700">{language === 'ar' ? 'تاريخ الميلاد:' : 'DOB:'}</strong>{' '}
+                          {targetPat.dob}
+                        </span>
+                        <span>
+                          <strong className="text-slate-700">{language === 'ar' ? 'الجنس:' : 'Gender:'}</strong>{' '}
+                          {targetPat.gender === 'Female'
+                            ? (language === 'ar' ? 'أنثى' : 'Female')
+                            : (language === 'ar' ? 'ذكر' : 'Male')}
+                        </span>
+                        {targetPat.phone && (
+                          <span className="font-mono">
+                            <strong className="text-slate-700">{language === 'ar' ? 'الهاتف:' : 'Phone:'}</strong>{' '}
+                            {targetPat.phone}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                }
+                return (
+                  <div className="p-2.5 bg-amber-50 border border-amber-200 rounded text-xs text-amber-800 flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                    <span>
+                      {language === 'ar'
+                        ? 'يرجى اختيار مريض من القائمة أعلاه لربط الحالة به.'
+                        : 'Please select a patient from the dropdown above to link this case.'}
+                    </span>
+                  </div>
+                );
+              })()}
+
+              {/* Orthodontic Case Type */}
               <div>
                 <label className="font-semibold text-slate-700 block mb-1">
-                  Patient Full Name (English)
+                  {language === 'ar' ? 'نوع الحالة التقويمية' : 'Orthodontic Case Type'}
                 </label>
-                <input
-                  type="text"
-                  required
-                  value={newPatientNameEn}
-                  onChange={(e) => setNewPatientNameEn(e.target.value)}
-                  placeholder="e.g., Reem Abdullah Al-Qahtani"
-                  className="w-full px-3 py-2 border border-slate-300 rounded"
-                />
+                <select
+                  value={newCaseType}
+                  onChange={(e) => setNewCaseType(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-300 rounded font-medium bg-white text-slate-900"
+                >
+                  <option value="Comprehensive Fixed Appliance">
+                    {language === 'ar' ? 'تقويم شامل بأجهزة ثابتة (Comprehensive Fixed Appliance)' : 'Comprehensive Fixed Appliance'}
+                  </option>
+                  <option value="Growth Modification + Fixed">
+                    {language === 'ar' ? 'تعديل نمو + أجهزة ثابتة (Growth Modification + Fixed)' : 'Growth Modification + Fixed'}
+                  </option>
+                  <option value="MARPE + Skeletal Anchorage">
+                    {language === 'ar' ? 'توسيع عظمي MARPE + تثبيت هيكلي (MARPE + Skeletal Anchorage)' : 'MARPE + Skeletal Anchorage'}
+                  </option>
+                  <option value="Surgical-Orthodontic">
+                    {language === 'ar' ? 'تقويم جراحي (Surgical-Orthodontic)' : 'Surgical-Orthodontic'}
+                  </option>
+                  <option value="Clear Aligner Therapy">
+                    {language === 'ar' ? 'تقويم شفاف (Clear Aligner Therapy)' : 'Clear Aligner Therapy'}
+                  </option>
+                  <option value="Retreatment">
+                    {language === 'ar' ? 'إعادة معالجة تقويمية (Retreatment)' : 'Retreatment'}
+                  </option>
+                </select>
               </div>
+
+              {/* Start Date */}
               <div>
-                <label className="font-semibold text-slate-700 block mb-1">Date of Birth</label>
+                <label className="font-semibold text-slate-700 block mb-1">
+                  {language === 'ar' ? 'تاريخ بدء الحالة' : 'Case Start Date'}
+                </label>
                 <input
                   type="date"
-                  value={newPatientDob}
-                  onChange={(e) => setNewPatientDob(e.target.value)}
+                  value={newCaseStartDate}
+                  onChange={(e) => setNewCaseStartDate(e.target.value)}
                   className="w-full px-3 py-2 border border-slate-300 rounded font-mono"
                 />
               </div>
+
+              {/* Chief Complaint */}
               <div>
                 <label className="font-semibold text-slate-700 block mb-1">
-                  Chief Complaint
+                  {language === 'ar' ? 'الشكوى الرئيسية (Chief Complaint) *' : 'Chief Complaint *'}
                 </label>
                 <input
                   type="text"
+                  required
                   value={newCaseChiefComplaintEn}
                   onChange={(e) => setNewCaseChiefComplaintEn(e.target.value)}
-                  placeholder="e.g., Upper anterior crowding and deep bite"
+                  placeholder={language === 'ar' ? 'مثال: تزاحم في الأسنان العلوية وعضة عميقة' : 'e.g., Upper anterior crowding and deep bite'}
                   className="w-full px-3 py-2 border border-slate-300 rounded"
                 />
               </div>
+
               <div className="pt-3 flex justify-end gap-2">
                 <button
                   type="button"
                   onClick={() => setShowNewCaseModal(false)}
-                  disabled={isCreatingPatient}
+                  disabled={isCreatingCase}
                   className="px-4 py-2 bg-slate-100 text-slate-700 rounded-lg font-medium disabled:opacity-50"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  disabled={isCreatingPatient}
+                  disabled={isCreatingCase || !newCaseTargetPatientId || !newCaseChiefComplaintEn.trim()}
                   className="px-4 py-2 bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-800 disabled:opacity-50 flex items-center gap-2"
                 >
-                  {isCreatingPatient ? (
+                  {isCreatingCase ? (
                     <>
                       <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
                       <span>{language === 'ar' ? 'جارٍ الحفظ في SQLite...' : 'Saving to SQLite...'}</span>
                     </>
                   ) : (
-                    <span>{language === 'ar' ? 'إنشاء وحفظ في SQLite' : 'Initialize & Save to SQLite'}</span>
+                    <span>{language === 'ar' ? 'إنشاء وحفظ الحالة' : 'Initialize & Save Case'}</span>
                   )}
                 </button>
               </div>
@@ -2148,6 +2442,22 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {/* NEW PATIENT REGISTRATION MODAL */}
+      <NewPatientModal
+        isOpen={showNewPatientModal}
+        onClose={() => setShowNewPatientModal(false)}
+        onPatientCreated={(newPatient) => {
+          setPatients((prev) => [newPatient, ...prev.filter((p) => p.id !== newPatient.id)]);
+          setSelectedPatientId(newPatient.id);
+          setActiveNav('patients');
+        }}
+        language={language}
+        cohort2PatientService={cohort2PatientService}
+        deviceId={deviceInfo?.deviceId || 'dev-browser-client'}
+        isDurable={isDurable}
+        storageMode={storageMode}
+      />
     </div>
   );
 }

@@ -16,7 +16,7 @@ import {
 import { formatDomainSection } from '../utils/i18n';
 
 interface AIDecisionSupportViewProps {
-  orthoCase: OrthodonticCase;
+  orthoCase?: OrthodonticCase;
   isOnline: boolean;
   language: LanguageMode;
   onAcceptSuggestedProblem: (newItem: ProblemObjectiveItem) => void;
@@ -146,18 +146,36 @@ export const AIDecisionSupportView: React.FC<AIDecisionSupportViewProps> = ({
   const [acceptedIndices, setAcceptedIndices] = React.useState<number[]>([]);
 
   const [result, setResult] = React.useState<AIConsultResponse | null>(() => {
-    return orthoCase.isDemo && orthoCase.id === 'ORT-2026-00104' ? DEMO_SARA_AI_RESPONSE : null;
+    return orthoCase?.isDemo && orthoCase?.id === 'ORT-2026-00104' ? DEMO_SARA_AI_RESPONSE : null;
   });
 
   React.useEffect(() => {
-    if (orthoCase.isDemo && orthoCase.id === 'ORT-2026-00104') {
+    if (orthoCase?.isDemo && orthoCase?.id === 'ORT-2026-00104') {
       setResult(DEMO_SARA_AI_RESPONSE);
     } else {
       setResult(null);
     }
     setAcceptedIndices([]);
     setError(null);
-  }, [orthoCase.id, orthoCase.isDemo]);
+  }, [orthoCase?.id, orthoCase?.isDemo]);
+
+  if (!orthoCase) {
+    return (
+      <div className="bg-white rounded-xl border border-slate-200 p-8 text-center space-y-3">
+        <div className="w-12 h-12 bg-amber-100 text-amber-700 rounded-full flex items-center justify-center mx-auto">
+          <AlertCircle className="w-6 h-6" />
+        </div>
+        <h3 className="text-base font-bold text-slate-800">
+          {language === 'ar' ? 'لم يتم تحديد حالة للاستشارة الذكية' : 'No Active Case Selected for AI Co-Pilot'}
+        </h3>
+        <p className="text-xs text-slate-500 max-w-md mx-auto">
+          {language === 'ar'
+            ? 'يرجى اختيار حالة تقويمية محددة من القائمة الجانبية لتشغيل تحليل ودعم القرار بالذكاء الاصطناعي.'
+            : 'Please select an active orthodontic case from the sidebar to consult AI decision support.'}
+        </p>
+      </div>
+    );
+  }
 
   const runAIConsultation = async () => {
     if (!isOnline) {
@@ -168,6 +186,7 @@ export const AIDecisionSupportView: React.FC<AIDecisionSupportViewProps> = ({
       );
       return;
     }
+    if (!orthoCase) return;
     setLoading(true);
     setError(null);
 
