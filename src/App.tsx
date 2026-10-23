@@ -1728,7 +1728,10 @@ export default function App() {
                 return (
                   <button
                     key={c.id}
-                    onClick={() => setSelectedCaseId(c.id)}
+                    onClick={() => {
+                      setSelectedPatientId(c.patientId);
+                      setSelectedCaseId(c.id);
+                    }}
                     className={`w-full text-start p-3 rounded-lg border transition-colors ${
                       isSelected
                         ? 'bg-slate-900 text-white border-slate-900'
