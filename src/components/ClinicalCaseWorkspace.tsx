@@ -2027,7 +2027,7 @@ export const ClinicalCaseWorkspace: React.FC<ClinicalCaseWorkspaceProps> = ({
                         onClick={async () => {
                           setVisitActionBusy(true);
                           try {
-                            await onUpdateVisit({ ...v, date: visitEditDraft.date, visitType: visitEditDraft.visitType.trim(), procedures: visitEditDraft.procedures.split(',').map((p) => p.trim()).filter(Boolean), clinicalNotesEn: visitEditDraft.clinicalNotesEn, nextAppointmentDate: visitEditDraft.nextAppointmentDate });
+                            await onUpdateVisit({ ...v, date: visitEditDraft.date, visitType: visitEditDraft.visitType.trim() as ClinicalVisit['visitType'], procedures: visitEditDraft.procedures.split(',').map((p) => p.trim()).filter(Boolean), clinicalNotesEn: visitEditDraft.clinicalNotesEn, nextAppointmentDate: visitEditDraft.nextAppointmentDate });
                             setEditingVisitId(null); setVisitEditDraft(null);
                           } finally { setVisitActionBusy(false); }
                         }}><Save className="h-3 w-3" />{language === 'ar' ? 'حفظ التعديل' : 'Save changes'}</button>
