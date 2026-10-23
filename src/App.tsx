@@ -536,7 +536,7 @@ export default function App() {
       if (storageStatus === 'READY' && cohort2CaseService) {
         try {
           const sqliteRows = await cohort2CaseService.listActiveCases();
-          if (isMounted && sqliteRows && sqliteRows.length > 0) {
+          if (isMounted && Array.isArray(sqliteRows)) {
             const mappedCases: OrthodonticCase[] = [];
             for (const row of sqliteRows) {
               const pat = patients.find((p) => p.id === row.patient_id);
@@ -606,6 +606,11 @@ export default function App() {
             }
 
             setCases((prev) => {
+              // Clinical mode must reflect SQLite exactly, including an authoritative empty result.
+              // Demo records remain a separate presentation-only dataset in non-clinical mode.
+              if (storageMode === 'CLINICAL') {
+                return mappedCases;
+              }
               const sqliteCaseIds = new Set(mappedCases.map((c) => c.id));
               const remainingDemoCases = prev.filter(
                 (c) => !sqliteCaseIds.has(c.id) && (c.isDemo || INITIAL_CASES.some((dc) => dc.id === c.id))
