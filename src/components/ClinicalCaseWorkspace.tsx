@@ -37,6 +37,7 @@ import {
   formatVisitType,
 } from '../utils/i18n';
 import { CephTracingCanvas, ClinicalRecordIllustration } from './CephTracingCanvas';
+import { CaseMediaUpload } from './CaseMediaUpload';
 
 interface ClinicalCaseWorkspaceProps {
   orthoCase?: OrthodonticCase;
@@ -112,6 +113,10 @@ export const ClinicalCaseWorkspace: React.FC<ClinicalCaseWorkspaceProps> = ({
         </p>
       </div>
     );
+  }
+
+  if (activeTab === 'media_comparison') {
+    return <CaseMediaUpload caseId={orthoCase.id} language={language} />;
   }
 
   const toggleProcedure = (proc: string) => {
