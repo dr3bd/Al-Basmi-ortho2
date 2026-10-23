@@ -1204,19 +1204,62 @@ export default function App() {
   };
 
   const handleSyncAllPending = async () => {
-    if (!isOnline) return;
+    if (!isOnline) {
+      setPersistenceError(
+        language === 'ar'
+          ? 'لا يمكن بدء المزامنة أثناء انقطاع الاتصال.'
+          : 'Cannot start synchronization while offline.'
+      );
+      return;
+    }
+
     try {
-      await fetch('/api/sync/push', {
+      const response = await fetch('/api/sync/push', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ items: cases, deviceId: 'iPad-Pro-Clinic-01' }),
+        body: JSON.stringify({ items: cases, deviceId: deviceInfo?.deviceId || 'browser-client' }),
       });
-      setSyncQueue((prev) =>
-        prev.map((s) => (s.status === 'Pending Offline' ? { ...s, status: 'Synced' } : s))
+
+      // Never report success for an HTTP failure or a static-host SPA fallback.
+      if (!response.ok) {
+        throw new Error(`Cloud sync endpoint failed with HTTP ${response.status}.`);
+      }
+
+      const contentType = response.headers.get('content-type') || '';
+      if (!contentType.toLowerCase().includes('application/json')) {
+        throw new Error(
+          'Cloud sync endpoint is unavailable or returned a non-JSON response. No sync status was changed.'
+        );
+      }
+
+      const result: unknown = await response.json();
+      if (
+        !result ||
+        typeof result !== 'object' ||
+        !('syncedCount' in result) ||
+        typeof (result as { syncedCount?: unknown }).syncedCount !== 'number' ||
+        !Number.isFinite((result as { syncedCount: number }).syncedCount)
+      ) {
+        throw new Error('Cloud sync acknowledgement is invalid. No sync status was changed.');
+      }
+
+      // This endpoint currently receives a case snapshot, not the queued operations.
+      // Do not mark individual offline operations as Synced until a durable sync
+      // protocol acknowledges those exact operation IDs.
+      appendAuditLog(
+        'Cloud Sync',
+        'Cloud Endpoint Acknowledged Case Snapshot',
+        `Endpoint acknowledged ${(result as { syncedCount: number }).syncedCount} case items; pending operations remain pending until individually acknowledged.`
       );
-      appendAuditLog('Cloud Sync', 'Synchronized Local Database with Cloud', `${cases.length} cases verified.`);
-    } catch {
-      // Fallback if offline
+      setPersistenceError(null);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      setPersistenceError(
+        language === 'ar'
+          ? `فشلت المزامنة ولم تُعلَن العناصر كمزامنة: ${message}`
+          : `Synchronization failed; pending items were not marked as synced: ${message}`
+      );
+      console.error('Cloud synchronization failed:', err);
     }
   };
 
