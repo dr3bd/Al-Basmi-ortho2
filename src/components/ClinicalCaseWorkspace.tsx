@@ -5,6 +5,10 @@ import {
   ShieldCheck,
   Camera,
   CalendarPlus,
+  Pencil,
+  Trash2,
+  Save,
+  X,
 } from 'lucide-react';
 import {
   CephAnalysisSchool,
@@ -56,6 +60,8 @@ interface ClinicalCaseWorkspaceProps {
     | 'media_comparison';
   onUpdateCase: (updated: OrthodonticCase, auditAction?: string, auditDetails?: string) => void;
   onAddQuickVisit: (visit: ClinicalVisit) => void;
+  onUpdateVisit: (visit: ClinicalVisit) => Promise<void>;
+  onDeleteVisit: (visitId: string) => Promise<void>;
 }
 
 export const ClinicalCaseWorkspace: React.FC<ClinicalCaseWorkspaceProps> = ({
@@ -68,6 +74,8 @@ export const ClinicalCaseWorkspace: React.FC<ClinicalCaseWorkspaceProps> = ({
   activeTab,
   onUpdateCase,
   onAddQuickVisit,
+  onUpdateVisit,
+  onDeleteVisit,
 }) => {
   // Cephalometric local state
   const [activeCephStage, setActiveCephStage] = React.useState<TimepointStage>('T0_Initial');
@@ -83,6 +91,12 @@ export const ClinicalCaseWorkspace: React.FC<ClinicalCaseWorkspaceProps> = ({
   const [newFindingText, setNewFindingText] = React.useState('');
   const [newObjectiveText, setNewObjectiveText] = React.useState('');
   const [newStrategyText, setNewStrategyText] = React.useState('');
+
+  const [editingVisitId, setEditingVisitId] = React.useState<string | null>(null);
+  const [visitEditDraft, setVisitEditDraft] = React.useState<{
+    date: string; visitType: string; procedures: string; clinicalNotesEn: string; nextAppointmentDate: string;
+  } | null>(null);
+  const [visitActionBusy, setVisitActionBusy] = React.useState(false);
 
   // Quick Visit Entry state (iPad 10-second chairside entry)
   const [visitType, setVisitType] = React.useState<ClinicalVisit['visitType']>('Wire Change');
@@ -1959,40 +1973,80 @@ export const ClinicalCaseWorkspace: React.FC<ClinicalCaseWorkspaceProps> = ({
               </div>
             ) : (
               orthoCase.visits.map((v) => (
-              <div
-                key={v.id}
-                className="p-4 bg-slate-50 border border-slate-200 rounded-lg space-y-2 text-xs"
-              >
+              <div key={v.id} className="p-4 bg-slate-50 border border-slate-200 rounded-lg space-y-2 text-xs">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="font-bold text-slate-900">
                     {language === 'ar'
                       ? `الجلسة #${v.visitNumber} · ${v.date} · ${formatVisitType('ar', v.visitType)}`
                       : `Visit #${v.visitNumber} · ${v.date} · ${v.visitType}`}
                   </div>
-                  <span className="text-blue-700 font-semibold">
-                    {formatTimepointStage(language, v.stage)}
-                  </span>
-                </div>
-                <div className="text-slate-700 font-medium">
-                  {language === 'ar'
-                    ? `الإجراءات: ${v.procedures.map((p) => formatProcedure('ar', p)).join(' · ')}`
-                    : `Procedures: ${v.procedures.join(' · ')}`}
-                </div>
-                <div className="font-mono text-slate-600 text-[11px]">
-                  {language === 'ar'
-                    ? `السلك العلوي: ${v.upperArchwire} | السلك السفلي: ${v.lowerArchwire} | المطاط: ${v.elasticsConfig}`
-                    : `Upper Wire: ${v.upperArchwire} | Lower Wire: ${v.lowerArchwire} | Elastics: ${v.elasticsConfig}`}
-                </div>
-                <p className="text-slate-800 leading-relaxed">
-                  {language === 'ar' ? v.clinicalNotesAr : v.clinicalNotesEn}
-                </p>
-                {v.materialsIssuedIds.length > 0 && (
-                  <div className="pt-2 border-t border-slate-200 text-[11px] text-slate-500">
-                    {language === 'ar' ? 'المواد المصروفة: ' : 'Consumed Materials: '}
-                    {v.materialsIssuedIds
-                      .map((m) => `${m.materialName} (${m.quantity * m.unitCost} SAR)`)
-                      .join(' ، ')}
+                  <div className="flex items-center gap-2">
+                    <span className="text-blue-700 font-semibold">{formatTimepointStage(language, v.stage)}</span>
+                    {editingVisitId !== v.id && (
+                      <>
+                        <button type="button" className="inline-flex items-center gap-1 rounded border border-blue-200 bg-white px-2 py-1 text-blue-700"
+                          onClick={() => {
+                            setEditingVisitId(v.id);
+                            setVisitEditDraft({ date: v.date, visitType: v.visitType, procedures: v.procedures.join(', '), clinicalNotesEn: v.clinicalNotesEn || '', nextAppointmentDate: v.nextAppointmentDate || '' });
+                          }}>
+                          <Pencil className="h-3 w-3" />{language === 'ar' ? 'تعديل' : 'Edit'}
+                        </button>
+                        <button type="button" className="inline-flex items-center gap-1 rounded border border-red-200 bg-white px-2 py-1 text-red-700"
+                          onClick={async () => {
+                            const confirmed = window.confirm(language === 'ar' ? 'هل تريد حذف هذه الجلسة؟ سيُحذف ظهورها من السجل النشط مع الاحتفاظ بسجل التدقيق.' : 'Delete this visit from the active record? An audit trail will be retained.');
+                            if (!confirmed) return;
+                            setVisitActionBusy(true);
+                            try { await onDeleteVisit(v.id); }
+                            finally { setVisitActionBusy(false); }
+                          }} disabled={visitActionBusy}>
+                          <Trash2 className="h-3 w-3" />{language === 'ar' ? 'حذف' : 'Delete'}
+                        </button>
+                      </>
+                    )}
                   </div>
+                </div>
+                {editingVisitId === v.id && visitEditDraft ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 rounded-md border border-blue-200 bg-white p-3">
+                    <label className="space-y-1"><span className="block text-slate-600">{language === 'ar' ? 'تاريخ الجلسة' : 'Visit date'}</span>
+                      <input type="date" className="w-full rounded border p-2" value={visitEditDraft.date} onChange={(e) => setVisitEditDraft({ ...visitEditDraft, date: e.target.value })} />
+                    </label>
+                    <label className="space-y-1"><span className="block text-slate-600">{language === 'ar' ? 'نوع الجلسة' : 'Visit type'}</span>
+                      <input className="w-full rounded border p-2" value={visitEditDraft.visitType} onChange={(e) => setVisitEditDraft({ ...visitEditDraft, visitType: e.target.value })} />
+                    </label>
+                    <label className="space-y-1 md:col-span-2"><span className="block text-slate-600">{language === 'ar' ? 'الإجراءات (افصل بينها بفاصلة)' : 'Procedures (comma-separated)'}</span>
+                      <input className="w-full rounded border p-2" value={visitEditDraft.procedures} onChange={(e) => setVisitEditDraft({ ...visitEditDraft, procedures: e.target.value })} />
+                    </label>
+                    <label className="space-y-1 md:col-span-2"><span className="block text-slate-600">{language === 'ar' ? 'الملاحظات السريرية (English field currently persisted)' : 'Clinical notes (persisted field)'}</span>
+                      <textarea className="w-full rounded border p-2" rows={3} value={visitEditDraft.clinicalNotesEn} onChange={(e) => setVisitEditDraft({ ...visitEditDraft, clinicalNotesEn: e.target.value })} />
+                    </label>
+                    <label className="space-y-1"><span className="block text-slate-600">{language === 'ar' ? 'موعد الزيارة التالية' : 'Next visit date'}</span>
+                      <input type="date" className="w-full rounded border p-2" value={visitEditDraft.nextAppointmentDate} onChange={(e) => setVisitEditDraft({ ...visitEditDraft, nextAppointmentDate: e.target.value })} />
+                    </label>
+                    <div className="md:col-span-2 flex flex-wrap gap-2">
+                      <button type="button" disabled={visitActionBusy || !visitEditDraft.date || !visitEditDraft.visitType.trim()} className="inline-flex items-center gap-1 rounded bg-blue-700 px-3 py-2 text-white disabled:opacity-50"
+                        onClick={async () => {
+                          setVisitActionBusy(true);
+                          try {
+                            await onUpdateVisit({ ...v, date: visitEditDraft.date, visitType: visitEditDraft.visitType.trim() as ClinicalVisit['visitType'], procedures: visitEditDraft.procedures.split(',').map((p) => p.trim()).filter(Boolean), clinicalNotesEn: visitEditDraft.clinicalNotesEn, nextAppointmentDate: visitEditDraft.nextAppointmentDate });
+                            setEditingVisitId(null); setVisitEditDraft(null);
+                          } finally { setVisitActionBusy(false); }
+                        }}><Save className="h-3 w-3" />{language === 'ar' ? 'حفظ التعديل' : 'Save changes'}</button>
+                      <button type="button" disabled={visitActionBusy} className="inline-flex items-center gap-1 rounded border px-3 py-2"
+                        onClick={() => { setEditingVisitId(null); setVisitEditDraft(null); }}><X className="h-3 w-3" />{language === 'ar' ? 'إلغاء' : 'Cancel'}</button>
+                    </div>
+                    <p className="md:col-span-2 text-amber-700">{language === 'ar' ? 'ملاحظة: حقول السلك والمطاط والمرحلة والمواد ليست كلها محفوظة بعد في مخطط SQLite الحالي؛ لن تظهر ضمن نموذج التعديل حتى تُربط بمسار حفظ موثوق.' : 'Note: archwire, elastics, stage, and materials are not all persisted in the current SQLite schema path, so they are excluded from this edit form.'}</p>
+                  </div>
+                ) : (
+                  <>
+                    <div className="text-slate-700 font-medium">
+                      {language === 'ar' ? `الإجراءات: ${v.procedures.map((p) => formatProcedure('ar', p)).join(' · ')}` : `Procedures: ${v.procedures.join(' · ')}`}
+                    </div>
+                    <div className="font-mono text-slate-600 text-[11px]">
+                      {language === 'ar' ? `السلك العلوي: ${v.upperArchwire} | السلك السفلي: ${v.lowerArchwire} | المطاط: ${v.elasticsConfig}` : `Upper Wire: ${v.upperArchwire} | Lower Wire: ${v.lowerArchwire} | Elastics: ${v.elasticsConfig}`}
+                    </div>
+                    <p className="text-slate-800 leading-relaxed">{language === 'ar' ? v.clinicalNotesAr : v.clinicalNotesEn}</p>
+                    {v.materialsIssuedIds.length > 0 && <div className="pt-2 border-t border-slate-200 text-[11px] text-slate-500">{language === 'ar' ? 'المواد المصروفة: ' : 'Consumed Materials: '}{v.materialsIssuedIds.map((m) => `${m.materialName} (${m.quantity * m.unitCost} SAR)`).join(' ، ')}</div>}
+                  </>
                 )}
               </div>
             ))

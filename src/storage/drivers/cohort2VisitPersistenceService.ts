@@ -945,6 +945,127 @@ export class Cohort2VisitPersistenceService {
     }
   }
 
+
+  /**
+   * Updates persisted visit fields and procedures atomically with audit and sync outbox.
+   * Fields not represented by the frozen SQLite schema are intentionally not accepted here.
+   */
+  public async updateVisit(params: {
+    visitId: string;
+    visitDate: string;
+    visitType: string;
+    clinicalNotes?: string | null;
+    nextVisitDate?: string | null;
+    procedures: string[];
+    userId: string;
+    deviceId: string;
+    timestamp?: string;
+  }): Promise<VisitOperationResult> {
+    const operationId = generateSafeId('op');
+    const now = params.timestamp || new Date().toISOString();
+    const cleanProcedures = [...new Set((params.procedures || []).map((value) => value.trim()).filter(Boolean))];
+
+    return this.adapter.transaction('IMMEDIATE', async (tx: ISqliteTransactionContext) => {
+      const existing = await this.visitRepo.getById(tx, params.visitId);
+      if (!existing) {
+        throw new Cohort2VisitPersistenceError('ERR_VISIT_NOT_FOUND', `Visit '${params.visitId}' does not exist or is deleted.`, 'Visit', params.visitId, operationId);
+      }
+      const oldProcedures = await this.visitRepo.listProceduresByVisitId(tx, params.visitId);
+      const oldPayload = canonicalizeJsonPayload({
+        id: existing.id, case_id: existing.case_id, visit_date: existing.visit_date,
+        visit_type: existing.visit_type, clinical_notes: existing.clinical_notes,
+        next_visit_date: existing.next_visit_date,
+        procedures: oldProcedures.map((p) => p.description),
+      });
+      const newPayload = canonicalizeJsonPayload({
+        id: existing.id, case_id: existing.case_id, visit_date: params.visitDate,
+        visit_type: params.visitType, clinical_notes: params.clinicalNotes ?? null,
+        next_visit_date: params.nextVisitDate ?? null, procedures: cleanProcedures,
+      });
+
+      await tx.execute(
+        `UPDATE visits SET visit_date = ?, visit_type = ?, clinical_notes = ?, next_visit_date = ?,
+          updated_at = ?, updated_by = ?, version = version + 1
+         WHERE id = ? AND is_deleted = 0;`,
+        [params.visitDate, params.visitType, params.clinicalNotes ?? null,
+          params.nextVisitDate ?? null, now, params.userId, params.visitId]
+      );
+      await tx.execute('DELETE FROM visit_procedures WHERE visit_id = ?;', [params.visitId]);
+      for (const description of cleanProcedures) {
+        const procedureId = generateSafeId('proc');
+        await this.visitRepo.insertProcedure(tx, {
+          id: procedureId, visit_id: params.visitId, planned_intervention_id: null,
+          procedure_code: description.toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_|_$/g, '') || 'OTHER',
+          procedure_type: 'CLINICAL', description, tooth_number: null, arch: null, quadrant: null,
+          status: 'COMPLETED', performed_at: now, performed_by: params.userId,
+          notes: null, created_at: now, updated_at: now,
+        });
+      }
+      const updated = await this.visitRepo.getById(tx, params.visitId);
+      if (!updated) throw new Error('Visit update verification failed inside transaction.');
+      const auditId = generateSafeId('aud');
+      await this.auditRepo.insert(tx, {
+        id: auditId, entity_type: 'visits', entity_id: params.visitId, operation_type: 'UPDATE',
+        user_id: params.userId, device_id: params.deviceId, timestamp: now,
+        entity_version_before: existing.version, entity_version_after: updated.version,
+        old_payload: oldPayload, new_payload: newPayload, reason_code: 'UPDATE_CLINICAL_VISIT',
+        metadata_json: JSON.stringify({ operation_id: operationId, case_id: existing.case_id }),
+      });
+      await this.syncRepo.insert(tx, {
+        operation_id: operationId, device_id: params.deviceId, entity_type: 'visits',
+        entity_id: params.visitId, operation_type: 'UPDATE', base_version: existing.version,
+        result_version: updated.version, payload: newPayload, created_at: now,
+        sync_status: 'PENDING', retry_count: 0, error_code: null, error_message: null,
+      });
+      return { ok: true, isIdempotentHit: false, visit: updated, syncOperationId: operationId, auditLogId: auditId };
+    });
+  }
+
+  /** Soft-deletes a visit; retained procedures and audit history remain available for forensic review. */
+  public async deleteVisit(params: {
+    visitId: string;
+    userId: string;
+    deviceId: string;
+    timestamp?: string;
+  }): Promise<{ ok: true; visit: SqliteVisitRow; syncOperationId: string; auditLogId: string }> {
+    const operationId = generateSafeId('op');
+    const now = params.timestamp || new Date().toISOString();
+    return this.adapter.transaction('IMMEDIATE', async (tx: ISqliteTransactionContext) => {
+      const existing = await this.visitRepo.getById(tx, params.visitId);
+      if (!existing) {
+        throw new Cohort2VisitPersistenceError('ERR_VISIT_NOT_FOUND', `Visit '${params.visitId}' does not exist or is already deleted.`, 'Visit', params.visitId, operationId);
+      }
+      const procedures = await this.visitRepo.listProceduresByVisitId(tx, params.visitId);
+      const oldPayload = canonicalizeJsonPayload({
+        id: existing.id, case_id: existing.case_id, visit_date: existing.visit_date,
+        visit_type: existing.visit_type, clinical_notes: existing.clinical_notes,
+        next_visit_date: existing.next_visit_date, procedures: procedures.map((p) => p.description),
+      });
+      const newVersion = existing.version + 1;
+      await tx.execute(
+        'UPDATE visits SET is_deleted = 1, deleted_at = ?, updated_at = ?, updated_by = ?, version = ? WHERE id = ? AND is_deleted = 0;',
+        [now, now, params.userId, newVersion, params.visitId]
+      );
+      const deleted = await this.visitRepo.getById(tx, params.visitId, true);
+      if (!deleted || deleted.is_deleted !== 1) throw new Error('Visit soft-delete verification failed inside transaction.');
+      const auditId = generateSafeId('aud');
+      await this.auditRepo.insert(tx, {
+        id: auditId, entity_type: 'visits', entity_id: params.visitId, operation_type: 'DELETE',
+        user_id: params.userId, device_id: params.deviceId, timestamp: now,
+        entity_version_before: existing.version, entity_version_after: newVersion,
+        old_payload: oldPayload, new_payload: null, reason_code: 'SOFT_DELETE_CLINICAL_VISIT',
+        metadata_json: JSON.stringify({ operation_id: operationId, case_id: existing.case_id }),
+      });
+      await this.syncRepo.insert(tx, {
+        operation_id: operationId, device_id: params.deviceId, entity_type: 'visits',
+        entity_id: params.visitId, operation_type: 'DELETE', base_version: existing.version,
+        result_version: newVersion, payload: canonicalizeJsonPayload({ id: params.visitId, case_id: existing.case_id, deleted_at: now }),
+        created_at: now, sync_status: 'PENDING', retry_count: 0, error_code: null, error_message: null,
+      });
+      return { ok: true, visit: deleted, syncOperationId: operationId, auditLogId: auditId };
+    });
+  }
+
   // --- Read Methods ---
 
   public async getVisitById(id: string, includeDeleted = false): Promise<SqliteVisitRow | null> {
