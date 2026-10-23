@@ -838,7 +838,10 @@ export default function App() {
           JSON.stringify(updated.intraoral) !== JSON.stringify(baseCase.intraoral) ||
           JSON.stringify(updated.occlusal) !== JSON.stringify(baseCase.occlusal) ||
           JSON.stringify(updated.cbctAndRadiographs) !== JSON.stringify(baseCase.cbctAndRadiographs);
-        if (examChanged && cohort2VisitService) {
+        if (examChanged) {
+          if (!cohort2VisitService) {
+            throw new Error('SQLite clinical examination service is unavailable; examination changes were not saved.');
+          }
           const examRes = await cohort2VisitService.createExamination({
             caseId: updated.id,
             examinationDate: nowIso.slice(0, 10),
