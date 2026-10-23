@@ -831,6 +831,72 @@ export async function runCohort2VisitForensicSuite(
     addResult('R2C-20', 'Regression tests for existing patient and case persistence services', false, String(err));
   }
 
+
+  // --------------------------------------------------------------------------
+  // R2C-21: Audited update and soft-delete lifecycle for a clinical visit
+  // --------------------------------------------------------------------------
+  try {
+    const lifecycleId = 'vis-lifecycle-update-delete-01';
+    const created = await visitService.createVisit({
+      ...validVisitParams,
+      id: lifecycleId,
+      operationId: 'op-vis-lifecycle-create-01',
+      procedures: ['Initial procedure'],
+    });
+    const updated = await visitService.updateVisit({
+      visitId: lifecycleId,
+      visitDate: '2026-10-20',
+      visitType: 'Adjustment',
+      clinicalNotes: 'Updated clinical note',
+      nextVisitDate: '2026-11-20',
+      procedures: ['Updated procedure A', 'Updated procedure B'],
+      userId: 'usr-dr-albasmi',
+      deviceId: 'dev-ipad-r2c-01',
+      timestamp: '2026-10-20T10:00:00Z',
+    });
+    const afterUpdate = await visitService.getVisitById(lifecycleId);
+    const updatedProcedures = await visitService.listVisitProceduresByVisitId(lifecycleId);
+    const updateAudit = await adapter.query(
+      "SELECT * FROM audit_logs WHERE entity_type = 'visits' AND entity_id = ? AND operation_type = 'UPDATE';",
+      [lifecycleId]
+    );
+    const updateSync = await adapter.query(
+      "SELECT * FROM sync_operations WHERE entity_type = 'visits' AND entity_id = ? AND operation_type = 'UPDATE';",
+      [lifecycleId]
+    );
+    const updatePassed = created.ok && updated.ok && afterUpdate?.version === 2 &&
+      afterUpdate.visit_date === '2026-10-20' && afterUpdate.clinical_notes === 'Updated clinical note' &&
+      updatedProcedures.map((row) => row.description).join('|') === 'Updated procedure A|Updated procedure B' &&
+      updateAudit.length === 1 && updateSync.length === 1;
+    const deleted = await visitService.deleteVisit({
+      visitId: lifecycleId,
+      userId: 'usr-dr-albasmi',
+      deviceId: 'dev-ipad-r2c-01',
+      timestamp: '2026-10-20T10:05:00Z',
+    });
+    const activeAfterDelete = await visitService.getVisitById(lifecycleId);
+    const retainedDeleted = await visitService.getVisitById(lifecycleId, true);
+    const deleteAudit = await adapter.query(
+      "SELECT * FROM audit_logs WHERE entity_type = 'visits' AND entity_id = ? AND operation_type = 'DELETE';",
+      [lifecycleId]
+    );
+    const deleteSync = await adapter.query(
+      "SELECT * FROM sync_operations WHERE entity_type = 'visits' AND entity_id = ? AND operation_type = 'DELETE';",
+      [lifecycleId]
+    );
+    const passed = updatePassed && deleted.ok && activeAfterDelete === null &&
+      retainedDeleted?.is_deleted === 1 && retainedDeleted.version === 3 &&
+      deleteAudit.length === 1 && deleteSync.length === 1;
+    addResult(
+      'R2C-21',
+      'Audited update and soft-delete lifecycle for a clinical visit',
+      passed,
+      `Update version=${afterUpdate?.version ?? 'missing'}, procedures=${updatedProcedures.length}, active-after-delete=${activeAfterDelete !== null}, retained-soft-deleted=${retainedDeleted?.is_deleted === 1}.`
+    );
+  } catch (err: unknown) {
+    addResult('R2C-21', 'Audited update and soft-delete lifecycle for a clinical visit', false, String(err));
+  }
+
   const passedCount = results.filter((r) => r.passed).length;
   const failedCount = results.filter((r) => r.status === 'FAIL').length;
   const blockedCount = results.filter((r) => r.status === 'BLOCKED' || r.status === 'NOT_RUN').length;
