@@ -5,7 +5,7 @@ import { ClinicalStorageProvider } from './storage/context/ClinicalStorageContex
 import './index.css';
 
 // Register the offline application shell in production builds (HTTPS required).
-if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+if (typeof window !== 'undefined' && window.location.protocol === 'https:' && 'serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch((error) => {
       console.error('Al-Basmi Orth offline support could not be registered:', error);
