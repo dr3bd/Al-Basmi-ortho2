@@ -68,6 +68,7 @@ import {
   SqlitePatientRow,
   SqliteOrthodonticCaseRow,
   SqliteVisitRow,
+  SqliteVisitProcedureRow,
   SqliteProblemRow,
   SqliteDiagnosisVersionRow,
   SqliteDiagnosisItemRow,
@@ -102,22 +103,23 @@ function mapSqlitePatientToUi(row: SqlitePatientRow): Patient {
 /**
  * Maps an authoritative SQLite visit row to UI presentation model.
  */
-function mapSqliteVisitToUi(row: SqliteVisitRow, index: number): ClinicalVisit {
+function mapSqliteVisitToUi(row: SqliteVisitRow, index: number, procedureRows: SqliteVisitProcedureRow[] = []): ClinicalVisit {
   return {
     id: row.id,
     visitNumber: index + 1,
     date: row.visit_date,
     stage: 'T1_Progress',
     visitType: (row.visit_type as ClinicalVisit['visitType']) || 'Adjustment',
-    procedures: row.chief_reason ? [row.chief_reason] : ['Routine Clinical Check'],
-    upperArchwire: '0.016 NiTi Upper',
-    lowerArchwire: '0.016 NiTi Lower',
-    elasticsConfig: 'None',
+    procedures: procedureRows.map((procedure) => procedure.description),
+    // These fields are intentionally blank until a normalized frozen-schema persistence path exists.
+    upperArchwire: '',
+    lowerArchwire: '',
+    elasticsConfig: '',
     materialsIssuedIds: [],
     clinicalNotesEn: row.clinical_notes || '',
-    clinicalNotesAr: row.clinical_notes || '',
-    nextPlan: 'Continue biomechanics alignment',
-    nextAppointmentDate: row.next_visit_date || '2026-11-15',
+    clinicalNotesAr: '',
+    nextPlan: '',
+    nextAppointmentDate: row.next_visit_date || '',
   };
 }
 
@@ -545,7 +547,11 @@ export default function App() {
               if (cohort2VisitService) {
                 try {
                   const visitRows = await cohort2VisitService.listVisitsByCaseId(row.id);
-                  caseVisits = visitRows.map((vr, idx) => mapSqliteVisitToUi(vr, idx));
+                  caseVisits = [];
+                  for (const [idx, vr] of visitRows.entries()) {
+                    const procedureRows = await cohort2VisitService.listVisitProceduresByVisitId(vr.id);
+                    caseVisits.push(mapSqliteVisitToUi(vr, idx, procedureRows));
+                  }
                   const exams = await cohort2VisitService.listExaminationsByCaseId(row.id);
                   if (exams && exams.length > 0) {
                     examFindings = await cohort2VisitService.listFindingsByExaminationId(exams[0].id);
@@ -1084,6 +1090,7 @@ export default function App() {
           chiefReason: visit.procedures.join(', ') || visit.visitType,
           clinicalNotes: visit.clinicalNotesEn || visit.clinicalNotesAr || null,
           nextVisitDate: visit.nextAppointmentDate || null,
+          procedures: visit.procedures,
           userId: 'usr-dr-albasmi',
           userRole: 'ORTHODONTIST',
           deviceId,

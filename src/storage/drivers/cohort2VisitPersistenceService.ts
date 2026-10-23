@@ -27,6 +27,7 @@
 
 import {
   SqliteVisitRow,
+  SqliteVisitProcedureRow,
   SqliteClinicalExaminationRow,
   SqliteClinicalFindingRow,
   SqliteToothFindingRow,
@@ -105,6 +106,8 @@ export interface CreateVisitParams {
   chiefReason?: string | null;
   clinicalNotes?: string | null;
   nextVisitDate?: string | null;
+  /** Actual procedures performed during this visit; persisted in frozen visit_procedures table. */
+  procedures?: string[];
   userId: string;
   userRole?: AuthoritativeValidationRole;
   deviceId: string;
@@ -203,6 +206,26 @@ export class SqliteVisitRepository {
         row.is_deleted,
         row.deleted_at ?? null,
       ]
+    );
+  }
+
+  public async insertProcedure(executor: ISqliteExecutor, row: SqliteVisitProcedureRow): Promise<void> {
+    await executor.execute(
+      `INSERT INTO visit_procedures (
+        id, visit_id, planned_intervention_id, procedure_code, procedure_type,
+        description, tooth_number, arch, quadrant, status, performed_at,
+        performed_by, notes, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+      [row.id, row.visit_id, row.planned_intervention_id, row.procedure_code, row.procedure_type,
+       row.description, row.tooth_number, row.arch, row.quadrant, row.status, row.performed_at,
+       row.performed_by, row.notes, row.created_at, row.updated_at]
+    );
+  }
+
+  public async listProceduresByVisitId(executor: ISqliteExecutor, visitId: string): Promise<SqliteVisitProcedureRow[]> {
+    return executor.query<SqliteVisitProcedureRow>(
+      'SELECT * FROM visit_procedures WHERE visit_id = ? ORDER BY performed_at ASC, created_at ASC;',
+      [visitId]
     );
   }
 
@@ -477,6 +500,7 @@ export class Cohort2VisitPersistenceService {
             visit_date: params.visitDate,
             visit_type: params.visitType,
             provider_id: params.providerId,
+            procedures: (params.procedures || []).map((value) => value.trim()).filter(Boolean),
           });
 
           if (existingOp.payload !== targetPayload) {
@@ -536,7 +560,32 @@ export class Cohort2VisitPersistenceService {
         // D. Insert into visits
         await this.visitRepo.insert(tx, visitRow);
 
-        // E. Insert Audit Log
+        // E. Persist performed procedures in the existing frozen relational table.
+        // Do not infer archwire, elastics, materials, or treatment-plan fields here: they have no
+        // compatible normalized columns in the frozen visit schema.
+        const performedProcedures = (params.procedures || []).map((value) => value.trim()).filter(Boolean);
+        for (const description of performedProcedures) {
+          const procedureRow: SqliteVisitProcedureRow = {
+            id: generateSafeId('vpr'),
+            visit_id: visitRow.id,
+            planned_intervention_id: null,
+            procedure_code: 'UI_RECORDED_PROCEDURE',
+            procedure_type: 'CLINICAL_PROCEDURE',
+            description,
+            tooth_number: null,
+            arch: null,
+            quadrant: null,
+            status: 'COMPLETED',
+            performed_at: now,
+            performed_by: params.providerId,
+            notes: null,
+            created_at: now,
+            updated_at: now,
+          };
+          await this.visitRepo.insertProcedure(tx, procedureRow);
+        }
+
+        // F. Insert Audit Log; include actual procedure descriptions in the same atomic record.
         const auditId = generateSafeId('aud');
         const payloadString = canonicalizeJsonPayload({
           id: visitRow.id,
@@ -544,6 +593,7 @@ export class Cohort2VisitPersistenceService {
           visit_date: visitRow.visit_date,
           visit_type: visitRow.visit_type,
           provider_id: visitRow.provider_id,
+          procedures: performedProcedures,
         });
 
         const auditRow: SqliteAuditLogRow = {
@@ -910,6 +960,10 @@ export class Cohort2VisitPersistenceService {
 
   public async listActiveVisits(): Promise<SqliteVisitRow[]> {
     return this.visitRepo.listActive(this.adapter);
+  }
+
+  public async listVisitProceduresByVisitId(visitId: string): Promise<SqliteVisitProcedureRow[]> {
+    return this.visitRepo.listProceduresByVisitId(this.adapter, visitId);
   }
 
   public async getVisitCount(): Promise<number> {
