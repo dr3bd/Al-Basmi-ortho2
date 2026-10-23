@@ -56,6 +56,8 @@ import {
   formatSkeletalSagittal,
 } from './utils/i18n';
 import { ClinicalCaseWorkspace } from './components/ClinicalCaseWorkspace';
+import { ClinicalListManager } from './components/ClinicalListManager';
+import { CLINICAL_LISTS_STORAGE_KEY, DEFAULT_CLINICAL_LISTS, normalizeClinicalLists, ClinicalListCatalog } from './domain/clinicalListCatalog';
 import { P3ClinicalCoreWorkspace } from './components/P3ClinicalCoreWorkspace';
 import { ReportEngineView } from './components/ReportEngineView';
 import { AIDecisionSupportView } from './components/AIDecisionSupportView';
@@ -463,13 +465,30 @@ export default function App() {
   const [activeNav, setActiveNav] = React.useState<PrimaryNavSection>('patients');
   const [activeCaseTab, setActiveCaseTab] = React.useState<CaseSubTab>('diagnosis_problems');
   const [activeOpTab, setActiveOpTab] = React.useState<
-    'p0_architecture' | 'p3_sandbox' | 'finance' | 'inventory' | 'sync'
+    'p0_architecture' | 'p3_sandbox' | 'finance' | 'inventory' | 'sync' | 'clinical_lists'
   >('p0_architecture');
   const [searchQuery, setSearchQuery] = React.useState<string>('');
   const [showNewCaseModal, setShowNewCaseModal] = React.useState<boolean>(false);
   const [showNewPatientModal, setShowNewPatientModal] = React.useState<boolean>(false);
   const [selectedPatientId, setSelectedPatientId] = React.useState<string | null>(null);
   const [caseScope, setCaseScope] = React.useState<'all' | 'clinical' | 'demo'>('all');
+
+  const [clinicalLists, setClinicalLists] = React.useState<ClinicalListCatalog>(() => {
+    try {
+      const saved = localStorage.getItem(CLINICAL_LISTS_STORAGE_KEY);
+      return saved ? normalizeClinicalLists(JSON.parse(saved)) : DEFAULT_CLINICAL_LISTS;
+    } catch {
+      return DEFAULT_CLINICAL_LISTS;
+    }
+  });
+
+  React.useEffect(() => {
+    try {
+      localStorage.setItem(CLINICAL_LISTS_STORAGE_KEY, JSON.stringify(clinicalLists));
+    } catch (error) {
+      console.error('Failed to persist clinical list settings locally:', error);
+    }
+  }, [clinicalLists]);
 
   // Clinical SQLite Storage Integration (Phase R2-A, R2-B, R2-C, R2-D)
   const {
@@ -2190,6 +2209,7 @@ export default function App() {
                 patient={activePatient}
                 warnings={activeWarnings}
                 inventory={inventory}
+                clinicalLists={clinicalLists}
                 language={language}
                 activeTab={activeCaseTab}
                 onUpdateCase={handleUpdateCase}
@@ -2271,6 +2291,14 @@ export default function App() {
                   {language === 'ar' ? 'مخزن مواد التقويم' : 'Mini Orthodontic Inventory'}
                 </button>
                 <button
+                  onClick={() => setActiveOpTab('clinical_lists')}
+                  className={`px-3.5 py-1.5 rounded-md text-xs font-semibold ${
+                    activeOpTab === 'clinical_lists' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600'
+                  }`}
+                >
+                  {language === 'ar' ? 'إدارة القوائم السريرية' : 'Clinical Lists'}
+                </button>
+                <button
                   onClick={() => setActiveOpTab('sync')}
                   className={`px-3.5 py-1.5 rounded-md text-xs font-semibold ${
                     activeOpTab === 'sync'
@@ -2284,7 +2312,9 @@ export default function App() {
                 </button>
               </div>
 
-              {activeOpTab === 'p3_sandbox' ? (
+              {activeOpTab === 'clinical_lists' ? (
+                <ClinicalListManager catalog={clinicalLists} onChange={setClinicalLists} language={language} />
+              ) : activeOpTab === 'p3_sandbox' ? (
                 <P3ClinicalCoreWorkspace language={language} isOnline={isOnline} />
               ) : (
                 <OperationalAndSyncView
