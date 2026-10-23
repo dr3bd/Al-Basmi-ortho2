@@ -1,0 +1,13 @@
+{
+  "id": "/",
+  "name": "Al-Basmi Orth — Orthodontic Clinical Platform",
+  "short_name": "Al-Basmi Orth",
+  "description": "Offline-capable orthodontic clinical and diagnostic platform.",
+  "lang": "ar",
+  "dir": "rtl",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f8fafc",
+  "theme_color": "#1d4ed8"
+}
