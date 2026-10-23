@@ -90,6 +90,10 @@ export const ClinicalCaseWorkspace: React.FC<ClinicalCaseWorkspaceProps> = ({
   ]);
   const [upperWire, setUpperWire] = React.useState('0.019×0.025" SS');
   const [lowerWire, setLowerWire] = React.useState('0.019×0.025" SS');
+  const [upperWireCustom, setUpperWireCustom] = React.useState('');
+  const [lowerWireCustom, setLowerWireCustom] = React.useState('');
+  const [upperWireManual, setUpperWireManual] = React.useState(false);
+  const [lowerWireManual, setLowerWireManual] = React.useState(false);
   const [elastics, setElastics] = React.useState('Class II 3/16" 4.5oz Bilateral');
   const [selectedMaterialId, setSelectedMaterialId] = React.useState<string>(inventory[2]?.id || 'mat_3');
   const [visitNotesText, setVisitNotesText] = React.useState('');
@@ -136,8 +140,8 @@ export const ClinicalCaseWorkspace: React.FC<ClinicalCaseWorkspaceProps> = ({
       stage: visitStage,
       visitType,
       procedures: selectedProcedures,
-      upperArchwire: upperWire,
-      lowerArchwire: lowerWire,
+      upperArchwire: upperWireManual ? upperWireCustom.trim() : upperWire,
+      lowerArchwire: lowerWireManual ? lowerWireCustom.trim() : lowerWire,
       elasticsConfig: elastics,
       materialsIssuedIds: mat
         ? [{ materialId: mat.id, materialName: mat.name, quantity: 1, unitCost: mat.unitCost }]
@@ -1821,23 +1825,75 @@ export const ClinicalCaseWorkspace: React.FC<ClinicalCaseWorkspaceProps> = ({
               <label className="text-slate-600 font-medium block mb-1">
                 {language === 'ar' ? 'السلك العلوي (Upper Archwire)' : 'Upper Archwire'}
               </label>
-              <input
-                type="text"
-                value={upperWire}
-                onChange={(e) => setUpperWire(e.target.value)}
-                className="w-full px-2.5 py-2 border border-slate-300 rounded font-mono"
-              />
+              <select
+                value={upperWireManual ? '__CUSTOM__' : upperWire}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setUpperWireManual(value === '__CUSTOM__');
+                  if (value !== '__CUSTOM__') setUpperWire(value);
+                }}
+                className="w-full px-2.5 py-2 border border-slate-300 rounded bg-white font-mono"
+              >
+                <option value="0.012 NiTi">0.012 NiTi</option>
+                <option value="0.014 NiTi">0.014 NiTi</option>
+                <option value="0.016 NiTi">0.016 NiTi</option>
+                <option value="0.018 NiTi">0.018 NiTi</option>
+                <option value="0.016×0.022 NiTi">0.016×0.022 NiTi</option>
+                <option value="0.017×0.025 NiTi">0.017×0.025 NiTi</option>
+                <option value="0.019×0.025 NiTi">0.019×0.025 NiTi</option>
+                <option value="0.016 SS">0.016 SS</option>
+                <option value="0.016×0.022 SS">0.016×0.022 SS</option>
+                <option value="0.017×0.025 SS">0.017×0.025 SS</option>
+                <option value="0.019×0.025\" SS">0.019×0.025" SS</option>
+                <option value="0.017×0.025 TMA">0.017×0.025 TMA</option>
+                <option value="__CUSTOM__">{language === 'ar' ? 'أخرى — إدخال يدوي' : 'Other — enter manually'}</option>
+              </select>
+              {upperWireManual && (
+                <input
+                  type="text"
+                  value={upperWireCustom}
+                  onChange={(e) => setUpperWireCustom(e.target.value)}
+                  placeholder={language === 'ar' ? 'اكتب نوع السلك العلوي' : 'Enter upper archwire'}
+                  className="mt-2 w-full px-2.5 py-2 border border-slate-300 rounded font-mono"
+                />
+              )}
             </div>
             <div>
               <label className="text-slate-600 font-medium block mb-1">
                 {language === 'ar' ? 'السلك السفلي (Lower Archwire)' : 'Lower Archwire'}
               </label>
-              <input
-                type="text"
-                value={lowerWire}
-                onChange={(e) => setLowerWire(e.target.value)}
-                className="w-full px-2.5 py-2 border border-slate-300 rounded font-mono"
-              />
+              <select
+                value={lowerWireManual ? '__CUSTOM__' : lowerWire}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setLowerWireManual(value === '__CUSTOM__');
+                  if (value !== '__CUSTOM__') setLowerWire(value);
+                }}
+                className="w-full px-2.5 py-2 border border-slate-300 rounded bg-white font-mono"
+              >
+                <option value="0.012 NiTi">0.012 NiTi</option>
+                <option value="0.014 NiTi">0.014 NiTi</option>
+                <option value="0.016 NiTi">0.016 NiTi</option>
+                <option value="0.018 NiTi">0.018 NiTi</option>
+                <option value="0.016×0.022 NiTi">0.016×0.022 NiTi</option>
+                <option value="0.017×0.025 NiTi">0.017×0.025 NiTi</option>
+                <option value="0.019×0.025 NiTi">0.019×0.025 NiTi</option>
+                <option value="0.016 SS">0.016 SS</option>
+                <option value="0.016×0.022 SS">0.016×0.022 SS</option>
+                <option value="0.017×0.025 SS">0.017×0.025 SS</option>
+                <option value="0.019×0.025\" SS">0.019×0.025" SS</option>
+                <option value="0.017×0.025 TMA">0.017×0.025 TMA</option>
+                <option value="__CUSTOM__">{language === 'ar' ? 'أخرى — إدخال يدوي' : 'Other — enter manually'}</option>
+              </select>
+              {lowerWireManual && (
+                <input
+                  type="text"
+                  value={lowerWireCustom}
+                  onChange={(e) => setLowerWireCustom(e.target.value)}
+                  placeholder={language === 'ar' ? 'اكتب نوع السلك السفلي' : 'Enter lower archwire'}
+                  className="mt-2 w-full px-2.5 py-2 border border-slate-300 rounded font-mono"
+                />
+              )}
             </div>
           </div>
 
