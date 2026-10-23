@@ -1844,7 +1844,7 @@ export const ClinicalCaseWorkspace: React.FC<ClinicalCaseWorkspaceProps> = ({
                 <option value="0.016 SS">0.016 SS</option>
                 <option value="0.016×0.022 SS">0.016×0.022 SS</option>
                 <option value="0.017×0.025 SS">0.017×0.025 SS</option>
-                <option value="0.019×0.025\" SS">0.019×0.025" SS</option>
+                <option value={'0.019×0.025" SS'}>0.019×0.025&quot; SS</option>
                 <option value="0.017×0.025 TMA">0.017×0.025 TMA</option>
                 <option value="__CUSTOM__">{language === 'ar' ? 'أخرى — إدخال يدوي' : 'Other — enter manually'}</option>
               </select>
@@ -1881,7 +1881,7 @@ export const ClinicalCaseWorkspace: React.FC<ClinicalCaseWorkspaceProps> = ({
                 <option value="0.016 SS">0.016 SS</option>
                 <option value="0.016×0.022 SS">0.016×0.022 SS</option>
                 <option value="0.017×0.025 SS">0.017×0.025 SS</option>
-                <option value="0.019×0.025\" SS">0.019×0.025" SS</option>
+                <option value={'0.019×0.025" SS'}>0.019×0.025&quot; SS</option>
                 <option value="0.017×0.025 TMA">0.017×0.025 TMA</option>
                 <option value="__CUSTOM__">{language === 'ar' ? 'أخرى — إدخال يدوي' : 'Other — enter manually'}</option>
               </select>
