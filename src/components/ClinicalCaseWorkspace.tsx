@@ -38,12 +38,14 @@ import {
 } from '../utils/i18n';
 import { CephTracingCanvas, ClinicalRecordIllustration } from './CephTracingCanvas';
 import { CaseMediaUpload } from './CaseMediaUpload';
+import { ClinicalListCatalog } from '../domain/clinicalListCatalog';
 
 interface ClinicalCaseWorkspaceProps {
   orthoCase?: OrthodonticCase;
   patient?: Patient;
   warnings: ClinicalWarning[];
   inventory: InventoryMaterial[];
+  clinicalLists: ClinicalListCatalog;
   language: LanguageMode;
   activeTab:
     | 'examination'
@@ -61,6 +63,7 @@ export const ClinicalCaseWorkspace: React.FC<ClinicalCaseWorkspaceProps> = ({
   patient,
   warnings,
   inventory,
+  clinicalLists,
   language,
   activeTab,
   onUpdateCase,
@@ -1713,18 +1716,7 @@ export const ClinicalCaseWorkspace: React.FC<ClinicalCaseWorkspaceProps> = ({
 
   // 5. VISITS & LONGITUDINAL TIMELINE TAB
   if (activeTab === 'visits_progress') {
-    const COMMON_PROCEDURES = [
-      'Wire Change',
-      'Ligature Tie',
-      'Power Chain',
-      'Intermaxillary Elastics',
-      'IPR (Interproximal Reduction)',
-      'NiTi Open/Closed Coil',
-      'Bracket Reposition',
-      'TAD Placement / Activation',
-      'MARPE Activation',
-      'Debond & Retainer Delivery',
-    ];
+    const COMMON_PROCEDURES = clinicalLists.procedures;
 
     return (
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
@@ -1864,25 +1856,8 @@ export const ClinicalCaseWorkspace: React.FC<ClinicalCaseWorkspaceProps> = ({
               </label>
               <select
                 value={lowerWireManual ? '__CUSTOM__' : lowerWire}
-                onChange={(e) => {
-                  const value = e.target.value;
-                  setLowerWireManual(value === '__CUSTOM__');
-                  if (value !== '__CUSTOM__') setLowerWire(value);
-                }}
-                className="w-full px-2.5 py-2 border border-slate-300 rounded bg-white font-mono"
-              >
-                <option value="0.012 NiTi">0.012 NiTi</option>
-                <option value="0.014 NiTi">0.014 NiTi</option>
-                <option value="0.016 NiTi">0.016 NiTi</option>
-                <option value="0.018 NiTi">0.018 NiTi</option>
-                <option value="0.016×0.022 NiTi">0.016×0.022 NiTi</option>
-                <option value="0.017×0.025 NiTi">0.017×0.025 NiTi</option>
-                <option value="0.019×0.025 NiTi">0.019×0.025 NiTi</option>
-                <option value="0.016 SS">0.016 SS</option>
-                <option value="0.016×0.022 SS">0.016×0.022 SS</option>
-                <option value="0.017×0.025 SS">0.017×0.025 SS</option>
-                <option value={'0.019×0.025" SS'}>0.019×0.025&quot; SS</option>
-                <option value="0.017×0.025 TMA">0.017×0.025 TMA</option>
+                onChange={(e) =>
+                {clinicalLists.archwires.map((wire) => <option key={wire} value={wire}>{wire}</option>)}
                 <option value="__CUSTOM__">{language === 'ar' ? 'أخرى — إدخال يدوي' : 'Other — enter manually'}</option>
               </select>
               {lowerWireManual && (
@@ -1897,6 +1872,19 @@ export const ClinicalCaseWorkspace: React.FC<ClinicalCaseWorkspaceProps> = ({
             </div>
           </div>
 
+          <div>
+            <label className="text-slate-600 font-medium block mb-1">
+              {language === 'ar' ? 'المطاطات بين الفكين (Intermaxillary Elastics)' : 'Intermaxillary Elastics'}
+            </label>
+            <select
+              value={elastics}
+              onChange={(e) => setElastics(e.target.value)}
+              className="w-full px-2.5 py-2 border border-slate-300 rounded bg-white font-mono text-xs"
+            >
+              {clinicalLists.elastics.map((item) => <option key={item} value={item}>{item}</option>)}
+            </select>
+          </div>
+
           <div className="space-y-2 text-xs">
             <div>
               <label className="text-slate-600 font-medium block mb-1">
@@ -1906,16 +1894,9 @@ export const ClinicalCaseWorkspace: React.FC<ClinicalCaseWorkspaceProps> = ({
               </label>
               <select
                 value={selectedMaterialId}
-                onChange={(e) => setSelectedMaterialId(e.target.value)}
-                className="w-full px-2.5 py-2 border border-slate-300 rounded bg-white"
-              >
-                {inventory.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {language === 'ar'
-                      ? `${m.name} — التكلفة: ${m.unitCost} ريال (المتوفر: ${m.stockQuantity})`
-                      : `${m.name} — Cost: ${m.unitCost} SAR (In Stock: ${m.stockQuantity})`}
-                  </option>
-                ))}
+                onChange={(e) =>
+                {clinicalLists.archwires.map((wire) => <option key={wire} value={wire}>{wire}</option>)}
+                <option value="__CUSTOM__">{language === 'ar' ? 'أخرى — إدخال يدوي' : 'Other — enter manually'}</option>
               </select>
             </div>
 
