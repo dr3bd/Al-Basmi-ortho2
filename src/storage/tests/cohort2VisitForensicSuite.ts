@@ -197,6 +197,7 @@ export async function runCohort2VisitForensicSuite(
     chiefReason: '0.016 Upper and Lower NiTi archwire placement',
     clinicalNotes: 'Smooth engagement, good oral hygiene maintained.',
     nextVisitDate: '2026-11-15',
+    procedures: ['Upper archwire change', 'Lower archwire change'],
     userId: 'usr-dr-albasmi',
     userRole: 'ORTHODONTIST',
     deviceId: 'dev-ipad-r2c-01',
@@ -207,6 +208,7 @@ export async function runCohort2VisitForensicSuite(
   try {
     const res = await visitService.createVisit(validVisitParams);
     const inDb = await visitService.getVisitById(validVisitParams.id!);
+    const persistedProcedures = await visitService.listVisitProceduresByVisitId(validVisitParams.id!);
     const audits = await adapter.query(
       "SELECT * FROM audit_logs WHERE entity_type = 'visits' AND entity_id = ?;",
       [validVisitParams.id!]
@@ -221,6 +223,8 @@ export async function runCohort2VisitForensicSuite(
       !res.isIdempotentHit &&
       inDb !== null &&
       inDb.visit_type === 'Wire Change' &&
+      persistedProcedures.length === 2 &&
+      persistedProcedures.map((procedure) => procedure.description).join('|') === 'Upper archwire change|Lower archwire change' &&
       audits.length === 1 &&
       syncs.length === 1;
 
@@ -228,7 +232,7 @@ export async function runCohort2VisitForensicSuite(
       'R2C-02',
       'Successful clinical visit creation',
       isCommitted,
-      `Atomically committed: visits=1, audit_logs=1, sync_operations=1 for case '${baselineCaseId}'.`
+      `Atomically committed: visit + ${persistedProcedures.length} visit_procedures + audit + sync for case '${baselineCaseId}'.`
     );
   } catch (err: unknown) {
     addResult('R2C-02', 'Successful clinical visit creation', false, String(err));
