@@ -1155,6 +1155,71 @@ export default function App() {
     );
   };
 
+
+  const handleUpdateVisit = async (visit: ClinicalVisit): Promise<void> => {
+    if (!activeCase) return;
+    if (activeCase.isDemo) {
+      const updatedCase = { ...activeCase, visits: activeCase.visits.map((item) => item.id === visit.id ? visit : item) };
+      setCases((prev) => prev.map((item) => item.id === activeCase.id ? updatedCase : item));
+      appendAuditLog('Visits', 'Updated demo visit', `Case ${activeCase.id}; visit ${visit.id}`);
+      return;
+    }
+    if (storageStatus !== 'READY' || !cohort2VisitService || (storageMode === 'CLINICAL' && !isDurable)) {
+      throw new Error(language === 'ar' ? 'التخزين السريري الدائم غير جاهز؛ لم يُحفظ التعديل.' : 'Durable clinical storage is not ready; visit changes were not saved.');
+    }
+    try {
+      const deviceId = deviceInfo?.deviceId || 'dev-browser-client';
+      const result = await cohort2VisitService.updateVisit({
+        visitId: visit.id,
+        visitDate: visit.date,
+        visitType: visit.visitType,
+        clinicalNotes: visit.clinicalNotesEn || null,
+        nextVisitDate: visit.nextAppointmentDate || null,
+        procedures: visit.procedures,
+        userId: 'usr-dr-albasmi',
+        deviceId,
+      });
+      const verified = await cohort2VisitService.getVisitById(result.visit.id);
+      if (!verified || verified.version !== result.visit.version) throw new Error('Visit update verification failed after commit.');
+      const procedureRows = await cohort2VisitService.listVisitProceduresByVisitId(visit.id);
+      const authoritativeVisit = mapSqliteVisitToUi(verified, visit.visitNumber, procedureRows);
+      const updatedCase = { ...activeCase, visits: activeCase.visits.map((item) => item.id === visit.id ? { ...authoritativeVisit, materialsIssuedIds: visit.materialsIssuedIds } : item) };
+      setCases((prev) => prev.map((item) => item.id === activeCase.id ? updatedCase : item));
+      appendAuditLog('Visits (SQLite)', 'Updated clinical visit', `Case ${activeCase.id}; visit ${visit.id}`);
+      setPersistenceError(null);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      setPersistenceError(message);
+      throw err;
+    }
+  };
+
+  const handleDeleteVisit = async (visitId: string): Promise<void> => {
+    if (!activeCase) return;
+    if (activeCase.isDemo) {
+      const updatedCase = { ...activeCase, visits: activeCase.visits.filter((item) => item.id !== visitId) };
+      setCases((prev) => prev.map((item) => item.id === activeCase.id ? updatedCase : item));
+      appendAuditLog('Visits', 'Deleted demo visit from view', `Case ${activeCase.id}; visit ${visitId}`);
+      return;
+    }
+    if (storageStatus !== 'READY' || !cohort2VisitService || (storageMode === 'CLINICAL' && !isDurable)) {
+      throw new Error(language === 'ar' ? 'التخزين السريري الدائم غير جاهز؛ لم تُحذف الجلسة.' : 'Durable clinical storage is not ready; visit was not deleted.');
+    }
+    try {
+      await cohort2VisitService.deleteVisit({ visitId, userId: 'usr-dr-albasmi', deviceId: deviceInfo?.deviceId || 'dev-browser-client' });
+      const verified = await cohort2VisitService.getVisitById(visitId);
+      if (verified) throw new Error('Visit soft-delete verification failed: deleted visit is still active.');
+      const updatedCase = { ...activeCase, visits: activeCase.visits.filter((item) => item.id !== visitId) };
+      setCases((prev) => prev.map((item) => item.id === activeCase.id ? updatedCase : item));
+      appendAuditLog('Visits (SQLite)', 'Soft-deleted clinical visit', `Case ${activeCase.id}; visit ${visitId}`);
+      setPersistenceError(null);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      setPersistenceError(message);
+      throw err;
+    }
+  };
+
   const handleAcceptAIProblem = (newItem: ProblemObjectiveItem) => {
     if (!activeCase) return;
     handleUpdateCase(
@@ -2214,6 +2279,8 @@ export default function App() {
                 activeTab={activeCaseTab}
                 onUpdateCase={handleUpdateCase}
                 onAddQuickVisit={handleAddQuickVisit}
+              onUpdateVisit={handleUpdateVisit}
+              onDeleteVisit={handleDeleteVisit}
               />
             </div>
           )}
