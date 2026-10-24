@@ -16,6 +16,7 @@ import { Cohort2CasePersistenceService } from '../drivers/cohort2CasePersistence
 import { Cohort2VisitPersistenceService } from '../drivers/cohort2VisitPersistenceService.ts';
 import { Cohort2ProblemDiagnosisPersistenceService } from '../drivers/cohort2ProblemDiagnosisPersistenceService.ts';
 import { DeviceBootstrapService } from '../services/deviceBootstrap.ts';
+import { inspectSqliteSchemaReadOnly } from '../services/sqliteSchemaDiagnostics.ts';
 
 export interface DbFoundationTestResult {
   testId: string;
@@ -407,6 +408,26 @@ export async function runDbFoundationRemediationSuite(options?: {
       results.push({
         testId: 'DBF-05',
         name: 'Deterministic Database Export & Demo Case Write Rejection',
+        passed: false,
+        evidence: err instanceof Error ? err.message : String(err),
+      });
+    }
+    // ------------------------------------------------------------------------
+    // DBF-06: Read-only schema diagnostics report canonical object inventory.
+    // ------------------------------------------------------------------------
+    try {
+      const diagnostic = await inspectSqliteSchemaReadOnly(adapter);
+      const passed = diagnostic.passed;
+      results.push({
+        testId: 'DBF-06',
+        name: 'Read-only Schema Diagnostics: Object Inventory, Integrity & Foreign Keys',
+        passed,
+        evidence: `passed=${diagnostic.passed}, expectedTables=${diagnostic.expectedTables.length}, actualTables=${diagnostic.actualTables.length}, missingTables=${diagnostic.missingTables.join(',') || 'none'}, unexpectedTables=${diagnostic.unexpectedTables.join(',') || 'none'}, expectedIndexes=${diagnostic.expectedIndexes.length}, actualIndexes=${diagnostic.actualIndexes.length}, missingIndexes=${diagnostic.missingIndexes.join(',') || 'none'}, foreignKeyViolations=${diagnostic.foreignKeyViolations.length}, integrity=${diagnostic.integrityCheck.join(',')}, errors=${diagnostic.errors.join(' | ') || 'none'}`,
+      });
+    } catch (err: unknown) {
+      results.push({
+        testId: 'DBF-06',
+        name: 'Read-only Schema Diagnostics: Object Inventory, Integrity & Foreign Keys',
         passed: false,
         evidence: err instanceof Error ? err.message : String(err),
       });
