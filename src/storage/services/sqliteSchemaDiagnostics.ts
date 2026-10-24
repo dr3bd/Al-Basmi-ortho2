@@ -34,19 +34,21 @@ function sortedUnique(values: string[]): string[] {
 
 function extractExpectedColumns(ddl: string): Record<string, string[]> {
   const columns: Record<string, string[]> = {};
+  // SQL line comments may contain parentheses; exclude them before balancing table definitions.
+  const normalizedDdl = ddl.replace(/--[^\\r\\n]*/g, '');
   const tableStart = /CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?["'`]?([a-zA-Z_][\w]*)["'`]?\s*\(/gi;
-  for (const match of ddl.matchAll(tableStart)) {
+  for (const match of normalizedDdl.matchAll(tableStart)) {
     const tableName = match[1];
     const openParen = (match.index ?? 0) + match[0].lastIndexOf('(');
     let depth = 1;
     let quote: string | null = null;
     let segment = '';
     const definitions: string[] = [];
-    for (let i = openParen + 1; i < ddl.length && depth > 0; i++) {
-      const ch = ddl[i];
+    for (let i = openParen + 1; i < normalizedDdl.length && depth > 0; i++) {
+      const ch = normalizedDdl[i];
       if (quote) {
         segment += ch;
-        if (ch === quote && (i === 0 || ddl[i - 1] !== String.fromCharCode(92))) quote = null;
+        if (ch === quote && (i === 0 || normalizedDdl[i - 1] !== String.fromCharCode(92))) quote = null;
         continue;
       }
       if (ch === "'" || ch === '"' || ch === '`') {
