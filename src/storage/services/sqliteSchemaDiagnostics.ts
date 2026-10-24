@@ -65,24 +65,25 @@ function extractExpectedObjects(ddl: string): {
   indexes: string[];
   columnsByTable: Record<string, string[]>;
 } {
+  const cleanDdl = ddl.replace(/--[^\\n]*/g, '');
   const tables: string[] = [];
   const indexes: string[] = [];
   const columnsByTable: Record<string, string[]> = {};
   const tablePattern = /CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?["'\`]?([a-zA-Z_][\w]*)["'\`]?\s*\(/gi;
   const indexPattern = /CREATE\s+(?:UNIQUE\s+)?INDEX\s+(?:IF\s+NOT\s+EXISTS\s+)?["'\`]?([a-zA-Z_][\w]*)["'\`]?/gi;
 
-  for (const match of ddl.matchAll(tablePattern)) {
+  for (const match of cleanDdl.matchAll(tablePattern)) {
     const table = match[1];
     tables.push(table);
     const openParen = (match.index ?? 0) + match[0].lastIndexOf('(');
     let depth = 0;
     let quote: string | null = null;
     let closeParen = -1;
-    for (let i = openParen; i < ddl.length; i++) {
+    for (let i = openParen; i < cleanDdl.length; i++) {
       const char = ddl[i];
       if (quote) {
         if (char === quote) {
-          if (ddl[i + 1] === quote) i++;
+          if (cleanDdl[i + 1] === quote) i++;
           else quote = null;
         } else if (char === '\\') i++;
         continue;
@@ -95,7 +96,7 @@ function extractExpectedObjects(ddl: string): {
       }
     }
     if (closeParen < 0) continue;
-    const body = ddl.slice(openParen + 1, closeParen);
+    const body = cleanDdl.slice(openParen + 1, closeParen);
     const columns = splitTopLevelComma(body).flatMap((definition) => {
       if (/^(PRIMARY\s+KEY|FOREIGN\s+KEY|UNIQUE\b|CHECK\s*\(|CONSTRAINT\b)/i.test(definition)) return [];
       const columnMatch = definition.match(/^["'\`]?([a-zA-Z_][\w]*)["'\`]?\s+/);
@@ -103,7 +104,7 @@ function extractExpectedObjects(ddl: string): {
     });
     columnsByTable[table] = sortedUnique(columns);
   }
-  for (const match of ddl.matchAll(indexPattern)) indexes.push(match[1]);
+  for (const match of cleanDdl.matchAll(indexPattern)) indexes.push(match[1]);
   return { tables: sortedUnique(tables), indexes: sortedUnique(indexes), columnsByTable };
 }
 
