@@ -44,14 +44,7 @@ P0 is **PASSED only when** device-specific backup artifacts exist outside browse
 
 ## Additional code-level blocker found during adapter review
 
-A read-only review of `src/storage/drivers/waSqliteAdapter.ts` found that `restoreDatabaseBinary()` verifies the incoming backup in a temporary database, but the pre-restore snapshot of the live database is treated as best-effort:
-
-- `liveRollbackBytes` starts as `null`.
-- Failure to checkpoint/read the live database is only logged with `console.warn`.
-- Restoration then continues: the live handle is closed, sidecar files are deleted, and the live database file is overwritten.
-- If reopening the restored database fails while `liveRollbackBytes` is still `null`, the automatic rollback branch has no prior bytes to restore.
-
-This contradicts the intended fail-safe restoration guarantee. It is a **P0 blocker**: restore must abort before closing the live handle or deleting/overwriting any live files unless a complete, independently validated rollback snapshot has been captured. The failure path must preserve the original database and return a typed error. A test must simulate snapshot-read failure and prove the live database remains unchanged.
+A read-only review of `src/storage/drivers/waSqliteAdapter.ts` found that `restoreDatabaseBinary()` originally treated the pre-restore snapshot of the live database as best-effort. The fail-closed fix is available separately in [PR #12](https://github.com/dr3bd/Al-Basmi-ortho2/pull/12); it must be reviewed and merged before considering the fix present on `main`.
 
 Additional adapter contract concern: `restoreDatabaseBinary()` exists on `WaSqliteStorageAdapter` but is not declared in the frozen `ISqliteStorageAdapter` interface. Do not modify the frozen interface casually; first decide and document whether restore belongs in a separate backup/restore capability interface or in a separately reviewed future contract version.
 
@@ -65,21 +58,42 @@ Additional adapter contract concern: `restoreDatabaseBinary()` exists on `WaSqli
 - [ ] Successful restore → verify reopened connection, integrity, foreign keys, and sentinel rows after closing/reopening the adapter.
 - [ ] All tests run against disposable test databases only; no live iPad/browser profile is accessed by CI.
 
+## Bootstrap guard — detailed finding (2026-10-24)
 
+Read-only source: `src/storage/services/deviceBootstrap.ts`, function `ensureCanonicalSchemaAndMigrations()`.
+
+The function currently:
+1. Reads the existing non-internal table names.
+2. Checks whether `schema_migrations` exists and contains `version = 1`.
+3. Applies the baseline DDL if `existingTables.length < 42 || !hasBaselineMigration`, rewriting `CREATE TABLE` / `CREATE INDEX` to `IF NOT EXISTS`.
+4. Inserts migration version 1 with `INSERT OR IGNORE`.
+5. Returns final table/index counts without verifying the final schema against the canonical DDL.
+
+Consequences:
+- A partially initialized or structurally incompatible database can trigger baseline DDL application.
+- `IF NOT EXISTS` does not repair columns missing from a table that already exists.
+- A database with at least 42 tables and a version-1 migration row can skip DDL even if columns/index definitions are wrong.
+- The current function does not distinguish a genuinely empty database from an unknown/partial schema before attempting DDL.
+- DBF-01 in `src/storage/tests/dbFoundationRemediationSuite.ts` checks only `tableCount >= 30`, foreign-key enablement, and second-run idempotency; it does not exercise partial-schema safety or assert exact manifest equivalence.
+
+**Required implementation contract before changing bootstrap behavior:**
+- [ ] Classify a genuinely empty database separately from any non-empty/partial database.
+- [ ] For a genuinely empty database only, create the baseline schema inside a transaction where supported, then verify it against the reviewed manifest before recording migration success.
+- [ ] For any non-empty database, run read-only diagnostics first; if schema is incomplete, incompatible, or diagnostics fail, abort with a typed schema-mismatch error and preserve all existing bytes/data.
+- [ ] Never treat table count or migration-row presence as proof of schema equivalence.
+- [ ] Add isolated tests for empty DB initialization, fully initialized DB idempotency, partial tables, missing columns, missing indexes, migration row present with incompatible schema, and a failure partway through initialization.
+- [ ] Ensure a failed initialization does not leave a misleading migration version-1 row.
+- [ ] Keep the frozen schema DDL and `ISqliteStorageAdapter` contract unchanged unless separately authorized.
+
+This is a **design and verification requirement, not an authorization to implement or migrate live data**. The next runtime change should be a narrowly scoped PR with isolated disposable-database tests and a review of transaction/rollback guarantees.
 
 ## Verification update — 2026-10-24
 
 ### Read-only schema diagnostics PR #13
 
-- The diagnostics parser now strips SQL line comments only outside quoted strings/identifiers; the comment newline handling was corrected in follow-up commits.
 - GitHub Actions run [#73](https://github.com/dr3bd/Al-Basmi-ortho2/actions/runs/40104189817) completed successfully for commit `69333e0d264943579b29fd2c0781bc08c9bbc3ed`.
 - The log reports DBF-06 passed, including the negative missing-column simulation, 45 expected/actual tables, 32 expected/actual indexes, no missing/unexpected columns, `integrity=ok`, and zero foreign-key violations. The isolated backup/restore suite reports 5/5 passing.
 - PR #13 remains a draft and is not merged. These results are CI evidence only; they do not validate an existing device database or compare full column types, defaults, nullability, constraints, index expressions, or foreign-key actions.
-
-### Restore rollback blocker status
-
-- The fail-closed rollback-snapshot fix is available separately in [PR #12](https://github.com/dr3bd/Al-Basmi-ortho2/pull/12), with its own successful CI run previously recorded. It is not evidence that the fix is present on `main` unless that PR is merged.
-- Therefore, treat the restore blocker as **still present on the base branch until the fix is reviewed and merged**. Keep restore disabled for live user data until the full required restore test matrix above is evidenced.
 
 ### Gate remains open
 
