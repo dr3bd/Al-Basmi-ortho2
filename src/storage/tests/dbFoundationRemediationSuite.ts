@@ -36,8 +36,9 @@ export async function runDbFoundationRemediationSuite(options?: {
   wasmBinary?: ArrayBuffer | Uint8Array;
 }): Promise<DbFoundationSuiteReport> {
   const results: DbFoundationTestResult[] = [];
+  const databaseName = `dbf_remediation_${Date.now()}.db`;
   const adapter = new WaSqliteStorageAdapter({
-    databaseName: `dbf_remediation_${Date.now()}.db`,
+    databaseName,
     mode: 'PREVIEW',
     allowPreviewEphemeral: true,
     wasmBinary: options?.wasmBinary,
@@ -407,6 +408,60 @@ export async function runDbFoundationRemediationSuite(options?: {
       results.push({
         testId: 'DBF-05',
         name: 'Deterministic Database Export & Demo Case Write Rejection',
+        passed: false,
+        evidence: err instanceof Error ? err.message : String(err),
+      });
+    }
+    // ------------------------------------------------------------------------
+    // DBF-06: Restore must fail closed when the live rollback snapshot cannot be read
+    // ------------------------------------------------------------------------
+    try {
+      const sentinelBefore = await adapter.queryOne<{ id: string }>(
+        "SELECT id FROM devices WHERE id = 'dev-dbf-outer-1';"
+      );
+      const validBackup = await adapter.exportDatabaseBinary();
+      const originalReadVfsFileBytes = (adapter as any).readVfsFileBytes.bind(adapter);
+      (adapter as any).readVfsFileBytes = async (filename: string) => {
+        if (filename === databaseName) {
+          throw new Error('SIMULATED_ROLLBACK_SNAPSHOT_READ_FAILURE');
+        }
+        return originalReadVfsFileBytes(filename);
+      };
+
+      let restoreRejected = false;
+      let expectedError = false;
+      try {
+        await adapter.restoreDatabaseBinary(validBackup);
+      } catch (err: unknown) {
+        restoreRejected = true;
+        expectedError =
+          err instanceof Error &&
+          err.message.includes('rollback snapshot could not be captured');
+      } finally {
+        (adapter as any).readVfsFileBytes = originalReadVfsFileBytes;
+      }
+
+      const sentinelAfter = await adapter.queryOne<{ id: string }>(
+        "SELECT id FROM devices WHERE id = 'dev-dbf-outer-1';"
+      );
+      const integrity = await adapter.queryScalar<string>('PRAGMA integrity_check;');
+      const passed =
+        sentinelBefore?.id === 'dev-dbf-outer-1' &&
+        restoreRejected &&
+        expectedError &&
+        sentinelAfter?.id === sentinelBefore.id &&
+        integrity === 'ok';
+
+      results.push({
+        testId: 'DBF-06',
+        name: 'Restore Fails Closed When Live Rollback Snapshot Read Fails',
+        passed,
+        evidence: `restoreRejected=${restoreRejected}, expectedError=${expectedError}, originalRowPreserved=${sentinelAfter?.id === sentinelBefore?.id}, integrity=${integrity}`,
+      });
+    } catch (err: unknown) {
+      results.push({
+        testId: 'DBF-06',
+        name: 'Restore Fails Closed When Live Rollback Snapshot Read Fails',
         passed: false,
         evidence: err instanceof Error ? err.message : String(err),
       });
