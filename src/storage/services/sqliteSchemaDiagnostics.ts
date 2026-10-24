@@ -14,6 +14,8 @@ export interface SqliteSchemaDiagnosticsReport {
   actualTables: string[];
   missingTables: string[];
   unexpectedTables: string[];
+  missingColumnsByTable: Record<string, string[]>;
+  unexpectedColumnsByTable: Record<string, string[]>;
   expectedIndexes: string[];
   actualIndexes: string[];
   missingIndexes: string[];
@@ -28,6 +30,50 @@ export interface SqliteSchemaDiagnosticsReport {
 
 function sortedUnique(values: string[]): string[] {
   return [...new Set(values)].sort((a, b) => a.localeCompare(b));
+}
+
+function extractExpectedColumns(ddl: string): Record<string, string[]> {
+  const columns: Record<string, string[]> = {};
+  const tableStart = /CREATE\\s+TABLE\\s+(?:IF\\s+NOT\\s+EXISTS\\s+)?["'`]?([a-zA-Z_][\\w]*)["'`]?\\s*\\(/gi;
+  for (const match of ddl.matchAll(tableStart)) {
+    const tableName = match[1];
+    const openParen = (match.index ?? 0) + match[0].lastIndexOf('(');
+    let depth = 1;
+    let quote: string | null = null;
+    let segment = '';
+    const definitions: string[] = [];
+    for (let i = openParen + 1; i < ddl.length && depth > 0; i++) {
+      const ch = ddl[i];
+      if (quote) {
+        segment += ch;
+        if (ch === quote && ddl[i - 1] !== '\\') quote = null;
+        continue;
+      }
+      if (ch === "'" || ch === '"' || ch === '`') {
+        quote = ch;
+        segment += ch;
+      } else if (ch === '(') {
+        depth++;
+        segment += ch;
+      } else if (ch === ')') {
+        depth--;
+        if (depth === 0) {
+          if (segment.trim()) definitions.push(segment.trim());
+          break;
+        }
+        segment += ch;
+      } else if (ch === ',' && depth === 1) {
+        definitions.push(segment.trim());
+        segment = '';
+      } else {
+        segment += ch;
+      }
+    }
+    columns[tableName] = definitions
+      .map((definition) => definition.match(/^["'`]?([a-zA-Z_][\\w]*)["'`]?/)?.[1])
+      .filter((name): name is string => Boolean(name) && !/^(PRIMARY|FOREIGN|UNIQUE|CHECK|CONSTRAINT)$/i.test(name));
+  }
+  return columns;
 }
 
 function extractExpectedObjects(ddl: string): { tables: string[]; indexes: string[] } {
@@ -48,9 +94,9 @@ export async function inspectSqliteSchemaReadOnly(
   adapter: ISqliteStorageAdapter
 ): Promise<SqliteSchemaDiagnosticsReport> {
   const errors: string[] = [];
-  const expected = extractExpectedObjects(P0_PRODUCTION_SQLITE_DDL);
+  const expected = extractExpectedObjects(P0_PRODUCTION_SQLITE_DDL);\n  const expectedColumns = extractExpectedColumns(P0_PRODUCTION_SQLITE_DDL);
   let actualTables: string[] = [];
-  let actualIndexes: string[] = [];
+  let actualIndexes: string[] = [];\n  const actualColumns: Record<string, string[]> = {};
   let integrityCheck: string[] = [];
   let foreignKeyViolations: Array<Record<string, unknown>> = [];
   let migrationRows: Array<Record<string, unknown>> | null = null;
@@ -62,6 +108,16 @@ export async function inspectSqliteSchemaReadOnly(
     actualTables = sortedUnique(tables.map((row) => row.name));
   } catch (error) {
     errors.push(`Unable to enumerate SQLite tables: ${error instanceof Error ? error.message : String(error)}`);
+  }
+
+  for (const tableName of expected.tables) {
+    if (!actualTables.includes(tableName)) continue;
+    try {
+      const rows = await adapter.query<{ name: string }>(`PRAGMA table_info("${tableName.replace(/"/g, '""')}");`);
+      actualColumns[tableName] = sortedUnique(rows.map((row) => row.name));
+    } catch (error) {
+      errors.push(`Unable to inspect columns for ${tableName}: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 
   try {
@@ -101,7 +157,7 @@ export async function inspectSqliteSchemaReadOnly(
 
   const missingTables = expected.tables.filter((name) => !actualTables.includes(name));
   const unexpectedTables = actualTables.filter((name) => !expected.tables.includes(name));
-  const missingIndexes = expected.indexes.filter((name) => !actualIndexes.includes(name));
+  const missingColumnsByTable: Record<string, string[]> = {};\n  const unexpectedColumnsByTable: Record<string, string[]> = {};\n  for (const tableName of expected.tables) {\n    if (!actualTables.includes(tableName)) continue;\n    const expectedNames = expectedColumns[tableName] ?? [];\n    const actualNames = actualColumns[tableName] ?? [];\n    const missing = expectedNames.filter((name) => !actualNames.includes(name));\n    const unexpected = actualNames.filter((name) => !expectedNames.includes(name));\n    if (missing.length) missingColumnsByTable[tableName] = missing;\n    if (unexpected.length) unexpectedColumnsByTable[tableName] = unexpected;\n  }\n  const missingIndexes = expected.indexes.filter((name) => !actualIndexes.includes(name));
   const unexpectedIndexes = actualIndexes.filter((name) => !expected.indexes.includes(name));
   const integrityOk = integrityCheck.length > 0 && integrityCheck.every((result) => result.toLowerCase() === 'ok');
   const passed =
@@ -129,7 +185,7 @@ export async function inspectSqliteSchemaReadOnly(
     errors,
     passed,
     limitations: [
-      'This check compares table/index names, not full column definitions, constraints, index expressions, or foreign-key actions.',
+      'This check compares table/index names and column names; it does not compare column types, nullability, defaults, constraints, index expressions, or foreign-key actions.',
       'A passing result is not authorization to migrate; review the complete schema and backup evidence first.',
       'This function does not export or back up data and does not modify the database.',
     ],
