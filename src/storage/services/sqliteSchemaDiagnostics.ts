@@ -146,7 +146,7 @@ export async function inspectSqliteSchemaReadOnly(
   for (const table of expected.tables) {
     if (!actualTables.includes(table)) continue;
     try {
-      const columns = await adapter.query<{ name: string }>(`PRAGMA table_info("\${table.replace(/"/g, '""')}");`);
+      const columns = await adapter.query<{ name: string }>(`PRAGMA table_info("${table.replace(/"/g, '""')}");`);
       actualColumnsByTable[table] = sortedUnique(columns.map((column) => column.name));
       const expectedColumns = expected.columnsByTable[table] ?? [];
       for (const column of expectedColumns) {
@@ -156,7 +156,7 @@ export async function inspectSqliteSchemaReadOnly(
         if (!expectedColumns.includes(column)) unexpectedColumns.push({ table, column });
       }
     } catch (error) {
-      errors.push(`Unable to inspect columns for \${table}: \${error instanceof Error ? error.message : String(error)}`);
+      errors.push(`Unable to inspect columns for ${table}: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
