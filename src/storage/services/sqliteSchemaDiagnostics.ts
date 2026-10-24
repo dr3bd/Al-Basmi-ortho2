@@ -65,7 +65,7 @@ function extractExpectedObjects(ddl: string): {
   indexes: string[];
   columnsByTable: Record<string, string[]>;
 } {
-  const cleanDdl = ddl.replace(/--[^\\n]*/g, '');
+  const cleanDdl = ddl.replace(/--[^\n]*/g, '');
   const tables: string[] = [];
   const indexes: string[] = [];
   const columnsByTable: Record<string, string[]> = {};
