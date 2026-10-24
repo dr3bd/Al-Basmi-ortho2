@@ -34,8 +34,33 @@ function sortedUnique(values: string[]): string[] {
 
 function extractExpectedColumns(ddl: string): Record<string, string[]> {
   const columns: Record<string, string[]> = {};
-  // SQL line comments may contain parentheses; exclude them before balancing table definitions.
-  const normalizedDdl = ddl.split('\n').map((line) => line.split('--')[0]).join('\n');
+  // Strip SQL line comments only when outside quoted strings/identifiers.
+  // A naive split('--') would corrupt a literal/default containing two hyphens.
+  let normalizedDdl = '';
+  let quote: string | null = null;
+  for (let i = 0; i < ddl.length; i++) {
+    const ch = ddl[i];
+    const next = ddl[i + 1];
+    if (quote) {
+      normalizedDdl += ch;
+      if (ch === quote && next === quote) {
+        normalizedDdl += next;
+        i++;
+      } else if (ch === quote && ddl[i - 1] !== String.fromCharCode(92)) {
+        quote = null;
+      }
+      continue;
+    }
+    if (ch === "'" || ch === '"' || ch === '`') {
+      quote = ch;
+      normalizedDdl += ch;
+    } else if (ch === '-' && next === '-') {
+      while (i < ddl.length && ddl[i] !== '\\n') i++;
+      if (i < ddl.length) normalizedDdl += '\\n';
+    } else {
+      normalizedDdl += ch;
+    }
+  }
   const tableStart = /CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?["'`]?([a-zA-Z_][\w]*)["'`]?\s*\(/gi;
   for (const match of normalizedDdl.matchAll(tableStart)) {
     const tableName = match[1];
