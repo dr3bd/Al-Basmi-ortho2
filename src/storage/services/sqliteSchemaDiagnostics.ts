@@ -35,7 +35,7 @@ function sortedUnique(values: string[]): string[] {
 function extractExpectedColumns(ddl: string): Record<string, string[]> {
   const columns: Record<string, string[]> = {};
   // SQL line comments may contain parentheses; exclude them before balancing table definitions.
-  const normalizedDdl = ddl.replace(/--[^\\r\\n]*/g, '');
+  const normalizedDdl = ddl.split('\n').map((line) => line.split('--')[0]).join('\n');
   const tableStart = /CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?["'`]?([a-zA-Z_][\w]*)["'`]?\s*\(/gi;
   for (const match of normalizedDdl.matchAll(tableStart)) {
     const tableName = match[1];
