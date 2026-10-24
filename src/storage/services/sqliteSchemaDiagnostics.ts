@@ -46,7 +46,7 @@ function extractExpectedColumns(ddl: string): Record<string, string[]> {
       const ch = ddl[i];
       if (quote) {
         segment += ch;
-        if (ch === quote && ddl[i - 1] !== '\') quote = null;
+        if (ch === quote && (i === 0 || ddl[i - 1] !== String.fromCharCode(92))) quote = null;
         continue;
       }
       if (ch === "'" || ch === '"' || ch === '`') {
