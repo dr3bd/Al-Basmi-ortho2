@@ -94,9 +94,11 @@ export async function inspectSqliteSchemaReadOnly(
   adapter: ISqliteStorageAdapter
 ): Promise<SqliteSchemaDiagnosticsReport> {
   const errors: string[] = [];
-  const expected = extractExpectedObjects(P0_PRODUCTION_SQLITE_DDL);\n  const expectedColumns = extractExpectedColumns(P0_PRODUCTION_SQLITE_DDL);
+  const expected = extractExpectedObjects(P0_PRODUCTION_SQLITE_DDL);
+  const expectedColumns = extractExpectedColumns(P0_PRODUCTION_SQLITE_DDL);
   let actualTables: string[] = [];
-  let actualIndexes: string[] = [];\n  const actualColumns: Record<string, string[]> = {};
+  let actualIndexes: string[] = [];
+  const actualColumns: Record<string, string[]> = {};
   let integrityCheck: string[] = [];
   let foreignKeyViolations: Array<Record<string, unknown>> = [];
   let migrationRows: Array<Record<string, unknown>> | null = null;
@@ -157,7 +159,17 @@ export async function inspectSqliteSchemaReadOnly(
 
   const missingTables = expected.tables.filter((name) => !actualTables.includes(name));
   const unexpectedTables = actualTables.filter((name) => !expected.tables.includes(name));
-  const missingColumnsByTable: Record<string, string[]> = {};\n  const unexpectedColumnsByTable: Record<string, string[]> = {};\n  for (const tableName of expected.tables) {\n    if (!actualTables.includes(tableName)) continue;\n    const expectedNames = expectedColumns[tableName] ?? [];\n    const actualNames = actualColumns[tableName] ?? [];\n    const missing = expectedNames.filter((name) => !actualNames.includes(name));\n    const unexpected = actualNames.filter((name) => !expectedNames.includes(name));\n    if (missing.length) missingColumnsByTable[tableName] = missing;\n    if (unexpected.length) unexpectedColumnsByTable[tableName] = unexpected;\n  }\n  const missingIndexes = expected.indexes.filter((name) => !actualIndexes.includes(name));
+  const missingColumnsByTable: Record<string, string[]> = {};
+  const unexpectedColumnsByTable: Record<string, string[]> = {};
+  for (const tableName of expected.tables) {
+    if (!actualTables.includes(tableName)) continue;
+    const expectedNames = expectedColumns[tableName] ?? [];
+    const actualNames = actualColumns[tableName] ?? [];
+    const missing = expectedNames.filter((name) => !actualNames.includes(name));
+    const unexpected = actualNames.filter((name) => !expectedNames.includes(name));
+    if (missing.length) missingColumnsByTable[tableName] = missing;
+    if (unexpected.length) unexpectedColumnsByTable[tableName] = unexpected;
+  }\n  const missingIndexes = expected.indexes.filter((name) => !actualIndexes.includes(name));
   const unexpectedIndexes = actualIndexes.filter((name) => !expected.indexes.includes(name));
   const integrityOk = integrityCheck.length > 0 && integrityCheck.every((result) => result.toLowerCase() === 'ok');
   const passed =
