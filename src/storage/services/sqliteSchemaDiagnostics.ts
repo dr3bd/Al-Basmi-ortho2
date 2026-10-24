@@ -55,8 +55,8 @@ function extractExpectedColumns(ddl: string): Record<string, string[]> {
       quote = ch;
       normalizedDdl += ch;
     } else if (ch === '-' && next === '-') {
-      while (i < ddl.length && ddl[i] !== '\\n') i++;
-      if (i < ddl.length) normalizedDdl += '\\n';
+      while (i < ddl.length && ddl[i] !== '\n') i++;
+      if (i < ddl.length) normalizedDdl += '\n';
     } else {
       normalizedDdl += ch;
     }
