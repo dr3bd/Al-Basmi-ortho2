@@ -422,7 +422,7 @@ export async function runDbFoundationRemediationSuite(options?: {
         testId: 'DBF-06',
         name: 'Read-only Schema Diagnostics: Object Inventory, Integrity & Foreign Keys',
         passed,
-        evidence: `passed=${diagnostic.passed}, expectedTables=${diagnostic.expectedTables.length}, actualTables=${diagnostic.actualTables.length}, missingTables=${diagnostic.missingTables.join(',') || 'none'}, unexpectedTables=${diagnostic.unexpectedTables.join(',') || 'none'}, expectedIndexes=${diagnostic.expectedIndexes.length}, actualIndexes=${diagnostic.actualIndexes.length}, missingIndexes=${diagnostic.missingIndexes.join(',') || 'none'}, foreignKeyViolations=${diagnostic.foreignKeyViolations.length}, integrity=${diagnostic.integrityCheck.join(',')}, errors=${diagnostic.errors.join(' | ') || 'none'}`,
+        evidence: `passed=${diagnostic.passed}, expectedTables=${diagnostic.expectedTables.length}, actualTables=${diagnostic.actualTables.length}, missingTables=${diagnostic.missingTables.join(',') || 'none'}, unexpectedTables=${diagnostic.unexpectedTables.join(',') || 'none'}, expectedIndexes=${diagnostic.expectedIndexes.length}, actualIndexes=${diagnostic.actualIndexes.length}, missingIndexes=${diagnostic.missingIndexes.join(',') || 'none'}, missingColumns=${JSON.stringify(diagnostic.missingColumns)}, unexpectedColumns=${JSON.stringify(diagnostic.unexpectedColumns)}, foreignKeyViolations=${diagnostic.foreignKeyViolations.length}, integrity=${diagnostic.integrityCheck.join(',')}, errors=${diagnostic.errors.join(' | ') || 'none'}`,
       });
     } catch (err: unknown) {
       results.push({
