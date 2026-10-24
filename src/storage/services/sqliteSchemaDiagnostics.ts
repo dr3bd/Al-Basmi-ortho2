@@ -34,7 +34,7 @@ function sortedUnique(values: string[]): string[] {
 
 function extractExpectedColumns(ddl: string): Record<string, string[]> {
   const columns: Record<string, string[]> = {};
-  const tableStart = /CREATE\\s+TABLE\\s+(?:IF\\s+NOT\\s+EXISTS\\s+)?["'`]?([a-zA-Z_][\\w]*)["'`]?\\s*\\(/gi;
+  const tableStart = /CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?["'`]?([a-zA-Z_][\w]*)["'`]?\s*\\(/gi;
   for (const match of ddl.matchAll(tableStart)) {
     const tableName = match[1];
     const openParen = (match.index ?? 0) + match[0].lastIndexOf('(');
@@ -46,7 +46,7 @@ function extractExpectedColumns(ddl: string): Record<string, string[]> {
       const ch = ddl[i];
       if (quote) {
         segment += ch;
-        if (ch === quote && ddl[i - 1] !== '\\') quote = null;
+        if (ch === quote && ddl[i - 1] !== '\') quote = null;
         continue;
       }
       if (ch === "'" || ch === '"' || ch === '`') {
@@ -70,7 +70,7 @@ function extractExpectedColumns(ddl: string): Record<string, string[]> {
       }
     }
     columns[tableName] = definitions
-      .map((definition) => definition.match(/^["'`]?([a-zA-Z_][\\w]*)["'`]?/)?.[1])
+      .map((definition) => definition.match(/^["'`]?([a-zA-Z_][\w]*)["'`]?/)?.[1])
       .filter((name): name is string => Boolean(name) && !/^(PRIMARY|FOREIGN|UNIQUE|CHECK|CONSTRAINT)$/i.test(name));
   }
   return columns;
@@ -190,6 +190,8 @@ export async function inspectSqliteSchemaReadOnly(
     actualTables,
     missingTables,
     unexpectedTables,
+    missingColumnsByTable,
+    unexpectedColumnsByTable,
     expectedIndexes: expected.indexes,
     actualIndexes,
     missingIndexes,
