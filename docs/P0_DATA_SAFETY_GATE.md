@@ -65,3 +65,22 @@ Additional adapter contract concern: `restoreDatabaseBinary()` exists on `WaSqli
 - [ ] Successful restore → verify reopened connection, integrity, foreign keys, and sentinel rows after closing/reopening the adapter.
 - [ ] All tests run against disposable test databases only; no live iPad/browser profile is accessed by CI.
 
+
+
+## Verification update — 2026-10-24
+
+### Read-only schema diagnostics PR #13
+
+- The diagnostics parser now strips SQL line comments only outside quoted strings/identifiers; the comment newline handling was corrected in follow-up commits.
+- GitHub Actions run [#73](https://github.com/dr3bd/Al-Basmi-ortho2/actions/runs/40104189817) completed successfully for commit `69333e0d264943579b29fd2c0781bc08c9bbc3ed`.
+- The log reports DBF-06 passed, including the negative missing-column simulation, 45 expected/actual tables, 32 expected/actual indexes, no missing/unexpected columns, `integrity=ok`, and zero foreign-key violations. The isolated backup/restore suite reports 5/5 passing.
+- PR #13 remains a draft and is not merged. These results are CI evidence only; they do not validate an existing device database or compare full column types, defaults, nullability, constraints, index expressions, or foreign-key actions.
+
+### Restore rollback blocker status
+
+- The fail-closed rollback-snapshot fix is available separately in [PR #12](https://github.com/dr3bd/Al-Basmi-ortho2/pull/12), with its own successful CI run previously recorded. It is not evidence that the fix is present on `main` unless that PR is merged.
+- Therefore, treat the restore blocker as **still present on the base branch until the fix is reviewed and merged**. Keep restore disabled for live user data until the full required restore test matrix above is evidenced.
+
+### Gate remains open
+
+No live iPad/browser storage was accessed by these CI runs. No device-specific backup, external read-back verification, or recovery drill has been performed. The split persistence paths, count-based bootstrap guard, and process-memory-only `cloudStore` remain unresolved. Do not authorize schema migration or legacy-store deletion based on these test results.
