@@ -465,7 +465,21 @@ export class WaSqliteStorageAdapter implements ISqliteStorageAdapter {
         await this.internalExecute('PRAGMA wal_checkpoint(FULL);');
         liveRollbackBytes = await this.readVfsFileBytes(this._databaseName);
       } catch (readLiveErr) {
-        console.warn('Could not take live pre-restore rollback snapshot:', readLiveErr);
+        // Fail closed: never overwrite the live database unless rollback bytes are available.
+        throw new SqliteStorageError(
+          'ERR_SQLITE_INITIALIZATION_FAILED',
+          `Restore aborted before modifying live storage because a rollback snapshot could not be captured: ${readLiveErr instanceof Error ? readLiveErr.message : String(readLiveErr)}`,
+          undefined,
+          undefined,
+          readLiveErr
+        );
+      }
+
+      if (!liveRollbackBytes || liveRollbackBytes.byteLength < 512 || !this.isValidSqliteHeader(liveRollbackBytes)) {
+        throw new SqliteStorageError(
+          'ERR_SQLITE_CORRUPT_DATABASE',
+          'Restore aborted because the live rollback snapshot is missing or is not a valid SQLite database.'
+        );
       }
 
       // Close live handle
