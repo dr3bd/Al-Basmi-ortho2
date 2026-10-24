@@ -169,13 +169,16 @@ export async function inspectSqliteSchemaReadOnly(
     const unexpected = actualNames.filter((name) => !expectedNames.includes(name));
     if (missing.length) missingColumnsByTable[tableName] = missing;
     if (unexpected.length) unexpectedColumnsByTable[tableName] = unexpected;
-  }\n  const missingIndexes = expected.indexes.filter((name) => !actualIndexes.includes(name));
+  }
+  const missingIndexes = expected.indexes.filter((name) => !actualIndexes.includes(name));
   const unexpectedIndexes = actualIndexes.filter((name) => !expected.indexes.includes(name));
   const integrityOk = integrityCheck.length > 0 && integrityCheck.every((result) => result.toLowerCase() === 'ok');
   const passed =
     errors.length === 0 &&
     missingTables.length === 0 &&
     unexpectedTables.length === 0 &&
+    Object.keys(missingColumnsByTable).length === 0 &&
+    Object.keys(unexpectedColumnsByTable).length === 0 &&
     missingIndexes.length === 0 &&
     unexpectedIndexes.length === 0 &&
     integrityOk &&
