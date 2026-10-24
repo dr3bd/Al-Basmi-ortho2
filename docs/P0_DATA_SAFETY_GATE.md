@@ -41,3 +41,27 @@ These facts mean **a successful build, a ready storage provider, or a successful
 ## Exit criteria
 
 P0 is **PASSED only when** device-specific backup artifacts exist outside browser storage, read-back is verified, and the read-only integrity/schema inventory is attached as a redacted report. Until then, the database must not be migrated, re-created, or re-frozen.
+
+## Additional code-level blocker found during adapter review
+
+A read-only review of `src/storage/drivers/waSqliteAdapter.ts` found that `restoreDatabaseBinary()` verifies the incoming backup in a temporary database, but the pre-restore snapshot of the live database is treated as best-effort:
+
+- `liveRollbackBytes` starts as `null`.
+- Failure to checkpoint/read the live database is only logged with `console.warn`.
+- Restoration then continues: the live handle is closed, sidecar files are deleted, and the live database file is overwritten.
+- If reopening the restored database fails while `liveRollbackBytes` is still `null`, the automatic rollback branch has no prior bytes to restore.
+
+This contradicts the intended fail-safe restoration guarantee. It is a **P0 blocker**: restore must abort before closing the live handle or deleting/overwriting any live files unless a complete, independently validated rollback snapshot has been captured. The failure path must preserve the original database and return a typed error. A test must simulate snapshot-read failure and prove the live database remains unchanged.
+
+Additional adapter contract concern: `restoreDatabaseBinary()` exists on `WaSqliteStorageAdapter` but is not declared in the frozen `ISqliteStorageAdapter` interface. Do not modify the frozen interface casually; first decide and document whether restore belongs in a separate backup/restore capability interface or in a separately reviewed future contract version.
+
+## Required isolated restore test cases before enabling restore in the UI
+
+- [ ] Valid export → restore into an isolated test database → verify sentinel rows, integrity, foreign keys, and schema inventory.
+- [ ] Invalid header / undersized payload → reject before touching live storage.
+- [ ] Backup integrity failure / foreign-key violation / incompatible schema → reject before touching live storage.
+- [ ] Live pre-restore snapshot failure → abort without closing or overwriting the live database.
+- [ ] Failure after live replacement → restore the prior snapshot and verify the prior sentinel rows.
+- [ ] Successful restore → verify reopened connection, integrity, foreign keys, and sentinel rows after closing/reopening the adapter.
+- [ ] All tests run against disposable test databases only; no live iPad/browser profile is accessed by CI.
+
