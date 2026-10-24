@@ -34,7 +34,7 @@ function sortedUnique(values: string[]): string[] {
 
 function extractExpectedColumns(ddl: string): Record<string, string[]> {
   const columns: Record<string, string[]> = {};
-  const tableStart = /CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?["'`]?([a-zA-Z_][\w]*)["'`]?\s*\\(/gi;
+  const tableStart = /CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?["'`]?([a-zA-Z_][\w]*)["'`]?\s*\(/gi;
   for (const match of ddl.matchAll(tableStart)) {
     const tableName = match[1];
     const openParen = (match.index ?? 0) + match[0].lastIndexOf('(');
